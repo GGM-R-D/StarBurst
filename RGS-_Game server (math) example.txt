@@ -1,0 +1,63 @@
+
+
+Introduction
+
+Throughout this document will be discussed which are the requirements when  developing a game to be deployed in Platform. 
+Game Client
+
+The game client can be developed using your favourite programming language  and frameworks. Since Platform deploys games as Docker containers,  please make sure that the source code you will be developing is containerized (in general we could say that there are no restriction from this point of view). In order for the game client to communicate with the RGS it is mandatory to  implement the API discussed within the document Game to RGS  Integration-Guide which allows to initiate a new game session and to request a  game play. 
+
+Although this is an operation will be made by the team, if you want to  build a Docker image and to deploy the game into Platform, you should  use a Docker file as follow. 
+FROM nginx:alpine 
+COPY . /usr/share/nginx/html 
+EXPOSE 80 
+Game Engine
+
+The game engine can be developed using your favourite programming  language and frameworks. Since Platform deploys games as Docker  containers, please make sure that the source code you will be developing is  containerized (in general we could say that there are no restriction from this  point of view). In order for the game engine to communicate with the RGS it is mandatory for  the game engine to implement an API as described below. 
+
+http method: POST 
+URL: /play 
+Request
+Parameter Type Descriptionbets Array It is an array which contains information of the  bets to be processes with the round. Each array’s  object does not have a fixe structure which  means that the game client can send whatever  format is required from the game engine. The  only mandatory field of a bet objcted is a property  called amount which has a Money data type. A bets array looks like as follow 
+"bets": [{"amount": 2}] bet Money Contains the calculated total bet as sum of all the  amount properties specified into the bets array. (IMPORTANT!)userPayload Any It can contain any kind of information the game client needs to send to the game engine. (IMPORTANT!)lastResponse Object Is the full previous response sent to the client  where can be retrieved  
+(lastResponse.game.results) the previous  response processed by the game engine. (used to proceed next spins (bonuses, correct restores, etc.)) (IMPORTANT!)rtpLevel Int If the game supports multiple RTP, in this field  will be sent the level (1,2,3,4 etc.) currently  configured for the game.mode Int Identifies in which mode is playing the game. The  possible values are: 
+- 0: normal play 
+- 1: in-game free spin
+- 2: bonus game 
+- 3: free bets given by a bonuscurrency Object It is a JSON object that contains information  about the currency. Below an example of the  object sent to the game engine. 
+ "currency": { 
+ "id": "EUR" 
+ }
+
+Response 
+Parameter Type DescriptionstatusCode Int You must send 200 if the game request has been  processed with success, otherwise you can send  any kind of code that will be recognised by the  game client. (IMPORTANT!)message String A string message that describes the status code.win Money The amount won if any otherwise will be zero. (IMPORTANT!)freeSpins Int The amount of free spins won if any otherwise will  be zero.results Object An object that describes the round result. The  structure of this object is proprietary of the game  engine and will be sent back to the client as  received back from the engine. (IMPORTANT!)feature Object If the game triggers a game feature such as a  bonus game or a gamble game, the game engine  must send back this object with two mandatory  properties (type and isClosure) and one optional  (name). 
+- feature.type: a string which indicates the feature type (e.g.  BONUS_GAME, GAMBLE_GAME). There is a free field - feature.name: a free field where to add a name for the  feature 
+- feature.isClosure: when the feature game plays the last  spin this has to be sent as 1 otherwise as 0.
+
+Note: it is good practice to separate the application used to expose the API  (game server) from the application user to implement the game logic and which  is the application that will be certified. This is a good practice because if it is  needed to change anything in the API implementation, you don’t need to certify  again the game. Generally the game logic is a library consumed by the game  server.
+ 
+Although this is an operation will be made by the team, if you want to  build a Docker image and to deploy the game into Platform, you will be  using something similar below. 
+NodeJs Game Engine 
+FROM node:15-alpine 
+WORKDIR /usr/src/app 
+COPY package*.json index.js ./ 
+RUN npm install 
+COPY . . 
+EXPOSE 8080 
+CMD [ "node", "index.js" ] 
+Java Game Engine 
+FROM openjdk:8-jdk-alpine 
+ARG JAR_FILE=build/libs/*.jar 
+COPY ${JAR_FILE} app.jar 
+ENTRYPOINT ["java","-jar","/app.jar"] 
+EXPOSE 8080 
+RNG
+
+Platform offers RNG as libraries and services. The default and certified  RNG is a PRNG that implements a Fortuna algorithm.  
+(https://en.wikipedia.org/wiki/Fortuna_(PRNG)) 
+If your game engine is written in Java we can provide the RNG as a library, if  not you will be using the RNG as a service.
+Data Types
+
+Type DescriptionMoney Decimal (20, 2) with a dot as decimal separator and no  thousands separator.
+
+

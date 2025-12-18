@@ -1,0 +1,173 @@
+{
+  "gameId": "Reign-Of-Thunder",
+  "gameName": "Reign Of Thunder",
+  "numReels": 6,
+  "numRows": 4,
+  "betAmounts": [10, 20, 30, 40, 50, 60, 70, 80, 90, 100],
+  "lines": 10,
+  "perLineLevels": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+  "totalBetLevels": [10, 20, 30, 40, 50, 60, 70, 80, 90, 100],
+  "betFormat": {
+    "showPerLine": true,
+    "labelPerLine": "Bet/Line",
+    "labelTotal": "Total Bet",
+    "currency": "ZAR",
+    "defaultIndex": 0
+  },
+  "freeSpinsAwarded": 10,
+  "wildSymbol": "WILD",
+  "scatterSymbol": "SCATTER",
+  "symbols": {
+    "WILD": {
+      "name": "Wild",
+      "image": "/images/symbols/Multiplier.webp",
+      "payout": {
+        "3": 20,
+        "4": 50,
+        "5": 100,
+        "6": 200
+      }
+    },
+    "SCATTER": {
+      "name": "Scatter",
+      "image": "/images/symbols/Crown.webp",
+      "payout": {
+        "3": 5,
+        "4": 15,
+        "5": 50,
+        "6": 150
+      }
+    },
+    "SYMBOL1": {
+      "name": "Symbol 1",
+      "image": "/images/symbols/Zeus.webp",
+      "payout": {
+        "3": 10,
+        "4": 25,
+        "5": 60,
+        "6": 150
+      }
+    },
+    "SYMBOL2": {
+      "name": "Symbol 2",
+      "image": "/images/symbols/Thor.webp",
+      "payout": {
+        "3": 8,
+        "4": 20,
+        "5": 50,
+        "6": 120
+      }
+    },
+    "SYMBOL3": {
+      "name": "Symbol 3",
+      "image": "/images/symbols/Eagle.webp",
+      "payout": {
+        "3": 5,
+        "4": 15,
+        "5": 40,
+        "6": 100
+      }
+    },
+    "SYMBOL4": {
+      "name": "Symbol 4",
+      "image": "/images/symbols/Chair.webp",
+      "payout": {
+        "3": 3,
+        "4": 10,
+        "5": 30,
+        "6": 80
+      }
+    },
+    "SYMBOL5": {
+      "name": "Symbol 5",
+      "image": "/images/symbols/K.webp",
+      "payout": {
+        "3": 2,
+        "4": 8,
+        "5": 25,
+        "6": 60
+      }
+    },
+    "SYMBOL6": {
+      "name": "Symbol 6",
+      "image": "/images/symbols/Q.webp",
+      "payout": {
+        "3": 2,
+        "4": 5,
+        "5": 20,
+        "6": 50
+      }
+    },
+    "SYMBOL7": {
+      "name": "Symbol 7",
+      "image": "/images/symbols/J.webp",
+      "payout": {
+        "3": 1,
+        "4": 3,
+        "5": 15,
+        "6": 40
+      }
+    },
+    "SYMBOL8": {
+      "name": "Symbol 8",
+      "image": "/images/symbols/h.webp",
+      "payout": {
+        "3": 1,
+        "4": 3,
+        "5": 15,
+        "6": 40
+      }
+    }
+  },
+  "paylines": [
+    [2, 2, 2, 2, 2, 2],
+    [3, 3, 3, 3, 3, 3],
+    [0, 0, 0, 0, 0, 0],
+    [1, 1, 1, 1, 1, 1],
+    [1, 0, 0, 0, 0, 1],
+    [2, 3, 3, 3, 3, 2],
+    [3, 2, 3, 2, 3, 2],
+    [2, 3, 2, 3, 2, 3],
+    [0, 1, 0, 1, 0, 1],
+    [1, 0, 1, 0, 1, 0]
+  ],
+  "reelStrips": [
+    [
+      "SYMBOL5", "SCATTER", "SYMBOL6", "SYMBOL7", "SYMBOL8", "SYMBOL3", "SYMBOL4", "SYMBOL2",
+      "SYMBOL7", "SYMBOL8", "SYMBOL6", "SYMBOL5", "SYMBOL1", "SYMBOL3", "SYMBOL2", "SYMBOL8",
+      "SYMBOL7", "SYMBOL8", "SYMBOL6", "SYMBOL5", "SYMBOL1", "SYMBOL3", "SYMBOL4", "SYMBOL7", "SYMBOL8",
+      "SYMBOL6", "SYMBOL5", "SYMBOL1", "WILD", "SYMBOL7", "SYMBOL8", "SYMBOL6", "SYMBOL5", "SCATTER"
+    ],
+    [
+      "SYMBOL7", "SYMBOL4", "SYMBOL2", "SYMBOL5", "SYMBOL1", "SYMBOL3", "SYMBOL4", "SYMBOL6",
+      "SYMBOL7", "SYMBOL8", "SYMBOL6", "SYMBOL5", "SYMBOL1", "SYMBOL3", "SYMBOL2", "SCATTER",
+      "SYMBOL7", "SYMBOL8", "SYMBOL6", "SYMBOL5", "SYMBOL1", "SYMBOL3", "SYMBOL8", "SYMBOL7", "SYMBOL8",
+      "SYMBOL6", "SYMBOL5", "SYMBOL1", "WILD", "SYMBOL7", "SYMBOL8", "SYMBOL6", "SYMBOL5", "SCATTER"
+    ],
+    [
+      "WILD", "SYMBOL1", "SYMBOL3", "SYMBOL4", "SYMBOL1", "SYMBOL6", "SYMBOL4", "SYMBOL2",
+      "SYMBOL7", "SYMBOL8", "SYMBOL6", "SYMBOL5", "SYMBOL1", "SYMBOL3", "SYMBOL2", "SCATTER",
+      "SYMBOL7", "SYMBOL8", "SYMBOL6", "SYMBOL5", "SYMBOL1", "SYMBOL3", "SYMBOL5", "SYMBOL7", "SYMBOL8",
+      "SYMBOL6", "SYMBOL5", "SYMBOL8", "WILD", "SYMBOL7", "SYMBOL8", "SYMBOL6", "SYMBOL5", "SCATTER"
+    ],
+    [
+      "SYMBOL7", "SYMBOL8", "SYMBOL6", "SYMBOL5", "SYMBOL1", "SYMBOL3", "SYMBOL4", "SYMBOL2",
+      "SYMBOL7", "SYMBOL8", "SYMBOL6", "SYMBOL5", "SYMBOL1", "SYMBOL3", "SYMBOL2", "SCATTER",
+      "SYMBOL7", "SYMBOL8", "SYMBOL6", "SYMBOL5", "SYMBOL1", "SYMBOL3", "SYMBOL4", "SYMBOL7", "SYMBOL8",
+      "SYMBOL6", "SYMBOL5", "SYMBOL1", "WILD", "SYMBOL7", "SYMBOL8", "SYMBOL6", "SYMBOL5", "SCATTER"
+    ],
+    [
+      "SYMBOL5", "SCATTER", "SYMBOL6", "SYMBOL7", "SYMBOL8", "SYMBOL3", "SYMBOL4", "SYMBOL2",
+      "SYMBOL7", "SYMBOL8", "SYMBOL6", "SYMBOL5", "SYMBOL1", "SYMBOL3", "SYMBOL2", "SYMBOL8",
+      "SYMBOL7", "SYMBOL8", "SYMBOL6", "SYMBOL5", "SYMBOL1", "SYMBOL3", "SYMBOL4", "SYMBOL7", "SYMBOL8",
+      "SYMBOL6", "SYMBOL5", "SYMBOL1", "WILD", "SYMBOL7", "SYMBOL8", "SYMBOL6", "SYMBOL5", "SCATTER"
+    ],
+    [
+      "SYMBOL7", "SYMBOL4", "SYMBOL2", "SYMBOL5", "SYMBOL1", "SYMBOL3", "SYMBOL4", "SYMBOL6",
+      "SYMBOL7", "SYMBOL8", "SYMBOL6", "SYMBOL5", "SYMBOL1", "SYMBOL3", "SYMBOL2", "SCATTER",
+      "SYMBOL7", "SYMBOL8", "SYMBOL6", "SYMBOL5", "SYMBOL1", "SYMBOL3", "SYMBOL8", "SYMBOL7", "SYMBOL8",
+      "SYMBOL6", "SYMBOL5", "SYMBOL1", "WILD", "SYMBOL7", "SYMBOL8", "SYMBOL6", "SYMBOL5", "SCATTER"
+    ]
+  ]
+}
+

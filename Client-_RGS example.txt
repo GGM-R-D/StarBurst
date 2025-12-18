@@ -1,0 +1,250 @@
+
+Introduction
+
+The purpose of this document is to explain how a game client can communicate with the   RGS. 
+Game Client API
+
+Introduction 
+All the API methods discussed within this section are exposed by . The  team will provide to the game developer an endpoint where all the API methods are  implemented and can be invoked by the game client. The API methods are RESTFUL  API with (POST) request and response formatted as JSON objects. 
+Game start 
+It allows to open a game session for a given player. 
+http method: POST 
+URL: /{operatorId} /{gameId}/start 
+Example: https://game.adomain.com/production/v1/ 
+TEST/EGYPTIAN_TREASURES/start 
+Request
+Parameter Type DescriptionoperatorId String It is an id that will be provided by the  team.gameId String It is the game id that the player is going to open.languageId String An ISO-639-1 two letters language code  
+(https://en.wikipedia.org/wiki/List_of_ISO_639- 1_codes)client String It identifies if the game has been launched from a  desktop or mobile web browser. There are two  possible values: 
+- desktop 
+- mobilefunMode Int It identifies if the game should be played as demo  mode or for real. There are two possible values: - 0 (the game will be played with real  money) 
+- 1 (the game will be played as demo  mode)token String It is the token that identifies a verified player in the  operator platform. This parameter is mandatory only  if funMode is 0
+currencyId String This is mandatory only if the game is playing in  funMode=1 and the game does not have a default  currency configured. In general the game start uses  the currency associated with the player and sent back  by the operator, but it is also possible to force a  different currency.
+
+Response
+Parameter Type DescriptionstatusCode Int See Error Codesmessage String A string message that describes the status code.player.sessionId String A valid player session created in the  platform.player.id String The id of the player on the operator side.player.balance Money The player balance on the operator wallet.client.type String It is the value sent in the request with the client  parameter.client.ip String IP Address of the client that made the request.client.country.code String The player’s country as a two letters ISO 3166  country code. 
+(https://en.wikipedia.org/wiki/List_of_ISO_3166 _country_codes).client.country.name String The player’s country name.currency.symbol String The currency’s symbol.currency.isoCode String The currency as a three letters ISO 4217  currency code  
+(https://en.wikipedia.org/wiki/ISO_4217)currency.name String The currency’s name.currency.decimals Int Number of decimals used for the currency.currency.separator.d ecimalString Decimal separator used for the currency.currency.separator.th ousandString Thousand separator used for the currency.game.rpt Decimal The game’s rtp configured in  for the  game. This information is useful when the game  client has to show in the paytable for regulatory  purpose the exact RTP value of the game.game.mode Int Identifies in which mode is playing the game.  The possible values are: 
+- 0: normal play 
+- 1: in-game free spin 
+- 2: bonus game 
+- 3: free bets given by a bonusgame.bet.default Int Default bet level index of the array  
+game.bet.levels
+game.bet.levels Array Array of bet levels available for the game. This  values, that are configured in  per each  game, are already expressed in currency.game.funMode Boolean If false the game is playing with real money.game.maxWinCap Money The maximum payout allowed by the operator  on the game.game.config.startScr eenObject It returns the start screen object configured in   for the game. The start screen can be  configured in any format that the game client can  recognised and translate.game.confing.setting sObject Is an object that contains all the behavioural settings associated with the jurisdiction.game.freeSpins.amo untInt The amount of free spins won.game.freeSpins.left Int The amount of free spins still available.game.freeSpins.  
+betValueMoney The bet value used with the free spingame.freeSpins.  
+roundWinMoney Amount won in the free spin round.game.freeSpins.  
+totalWinMoney Total amount won for the played free spins  rounds.game.freeSpins.  
+totalBetMoney Total amount bet for the played free spins  rounds.game. 
+promoFreeSpins.am ountInt The amount of the promotional free spins.game. 
+promoFreeSpins.leftInt The amount of the promotional free spins still  available.game. 
+promoFreeSpins.  betValueMoney The bet value used with the promotional free  spingame.  
+promoFreeSpins.  isPromotionBoolean If true, the promotional free spins have not been  startedgame.freeSpins.  
+totalWinMoney Total amount won for the played free spins  rounds.game.freeSpins.  
+totalBetMoney Total amount bet for the played free spins  rounds.game.lastPlay.betLe vel.indexInt The bet level index used with the last round.game.lastPlay.betLe vel.valueInt The bet level value used with the last round.game.lastPlay.results Object An object that describes the game results.game.feature Object An object that describes the feature game the  was playing. The object contains two properties  (name, type).
+
+Example
+Request 
+{  
+ "languageId": "en", 
+ "client": "desktop", 
+ "funMode": 0, 
+ "token": "8defg892dc906b0420c0d977480acc38d" } 
+Response 
+{ 
+ "statusCode": 6000, 
+ "message": "Request processed successfully",  "player": { 
+ "sessionId": "4f2e9abe0d0042a559fd905b9642f63f",  "id": "Player-1", 
+ "balance": 138358 
+ }, 
+ "client": { 
+ "type": "desktop", 
+ "ip": "80.180.213.46", 
+ "country": { 
+ "code": "IT", 
+ "name": "Italy" 
+ } 
+ }, 
+ "currency": { 
+ "symbol": "£", 
+ "isoCode": "GBP", 
+ "name": "Pound sterling", 
+ "separator": { 
+ "decimal": ".", 
+ "thousand": "," 
+ }, 
+ "decimals": 2 
+ }, 
+ "game": { 
+ "rtp": 97.86, 
+ "mode": 0, 
+ "bet": { 
+ "default": 1, 
+ "levels": [ 
+ 0.5, 
+ 1, 
+ 2, 
+ 3, 
+ 5, 
+ 10 
+ ] 
+ },
+ "funMode": false, 
+ "maxWinCap": 0, 
+ "config": { 
+ "startScreen": null, 
+ "settings": { 
+ "isAutoplay": "1",  "isSlamStop": "1",  "isBuyFeatures": "1",  "isTurboSpin": "1",  "isRealityCheck": "1",  "minSpin": "0", 
+ "maxSpin": "0" 
+ }, 
+ }, 
+ "freeSpins": { 
+ "amount": 0, 
+ "left": 0, 
+ "betValue": 0, 
+ "roundWin": 0, 
+ "totalWin": 0, 
+ "totalBet": 0 
+ }, 
+ "promoFreeSpins": { 
+ "amount": 3, 
+ "left": 3, 
+ "betValue": 0.01, 
+ "isPromotion": true, 
+ "totalWin": 0, 
+ "totalBet": 0 
+ }, 
+"feature": { 
+ "name": "BONUS_GAME", 
+ "type": "BUYFEATUREBONUSGAMEREQ"  }, 
+ "lastPlay": { 
+ "betLevel": { 
+ "index": 0, 
+ "value": 0 
+ }, 
+ "results": [] 
+ } 
+ } 
+}
+
+
+Game play 
+It allows to play a game round using the session opened with the game start. 
+http method: POST 
+URL: /{operatorId} /{gameId}/play 
+Example: https://game.adomain.com/production/v1/ 
+TEST/EGYPTIAN_TREASURES/play 
+Request 
+Parameter Type DescriptionsessionId String It is the game session created with the game start.bets Array It is an array of objects. Within each bet object the  only mandatory key is the amount key (see example  below). This object will be sent to the game engineuserPayload Object It is a JSON payload that you perhaps want to send to  the game engine with extra information of the game  and used to perform a game logic. The userPayload  parameter is optional. 
+
+Response
+Parameter Type DescriptionstatusCode Int See Error Codesmessage String A string message that describes the status code.player.sessionId String The session id created in the game start.player.roundId String The id for the round created in the  platform..player.transaction.wi thdrawString The unique id created in  for the withdraw  transaction.player.transaction.de positString The unique id created in  for the deposit  transaction.player.prevBalance Money The balance of the player before the bet.player.balance Money The balance of the player after the bet.player.bet Money The bet amount.player.win Money The win amount.player.currencyId String Currency as a three letters ISO 4217 currency  code. (https://en.wikipedia.org/wiki/ISO_4217)game.results Object An object that describes the game results. The  structure of this object depends of the game  engine and is not proprietary of  which  means that  sends back what is received  by the game engine.game.mode Int Identifies in which mode is playing the game.  The possible values are:
+
+
+- 0: normal play 
+- 1: in-game free spin 
+- 2: bonus game 
+- 3: free bets given by a bonusgame.maxWinCap.  achievedBoolean If true the game reached the maximum payout  allowed by the operator and that specific  currency.game.maxWinCap.  valueMoney The value of the maximum payout allowed by  the operator and that specific currency.game.maxWinCap.  realWinMoney The real win amount for the round before the cut  because of the cap.freeSpins.amount Int The amount of free spins won.freeSpins.left Int The amount of free spins still available.freeSpins. betValue Money The bet value used with the free spinfreeSpins.isPromotio nBoolean If true, free spins are associated with a  promotional campaign given by the operator.freeSpins. roundWin Money Amount won in the free spin round.freeSpins. totalWin Money Total amount won for the played free spins  rounds.freeSpins. totalBet Money Total amount bet for the played free spins  rounds.freeSpins.won Int The amount of in-game free spins won in the last  game round.promoFreeSpins.am ountInt The amount of the promotional free spins.promoFreeSpins.left Int The amount of the promotional free spins still  available.promoFreeSpins.  betValueMoney The bet value used with the promotional free  spin.promoFreeSpins.  levelInt The level value used with the promotional free  spin.game.freeSpins.  
+totalWinMoney Total amount won for the played free spins  rounds.game.freeSpins.  
+totalBetMoney Total amount bet for the played free spins  rounds.jackpots.id String The unique id of the jackpot associated with the  game.jackpots.  
+contributionMoney The player contribution.jackpots. payout Money The current payout of the jackpot.jackpots. isWon Boolean If true indicates that the jackpot has been won.jackpots. ticketId String The id of the ticket generated by the system.feature.name String If the game is playing a feature game (e.g. a  bonus game) here will be passed the feature  name sent by the game engine.feature.type String If the game is playing a feature game (e.g. a  bonus game) here will be passed the feature type  sent by the game engine.
+feature.isClosure String If the game is playing a feature game (e.g. a  bonus game) this value will be 1 if it is the last  round played of the feature game, otherwise will  be sent 0.
+
+Example 
+Request 
+{ 
+ "sessionId": "56cb5bae90cd0e4881218f377092fe55", 
+ "bets": [{"amount": 1}] 
+} 
+Response 
+{ 
+ "statusCode": 6000, 
+ "message": "Request processed successfully", 
+ "player": { 
+ "sessionId": "56cb5bae90cd0e4881218f377092fe55", 
+ "roundId": "b2d17a7e20f7adb754bd4a0f89b81823", 
+ "transaction": { 
+ "withdraw": "cfa9a88f65850293cf05d8b699c33728", 
+ "deposit": "1e72fb3ab514448fdf53d1a4e946a467" 
+ }, 
+ "prevBalance": 138328, 
+ "balance": 138508, 
+ "bet": 30, 
+ "win": 180, 
+ "currencyId": "GBP" 
+ }, 
+ "game": { 
+ "results": {HERE THERE IS THE RESPONSE OF THE GAME ENGINE},  "mode": 0, 
+ "maxWinCap": { 
+ "achieved": false, 
+ "value": 2350, 
+ "realWin": "10.00" 
+ } 
+ }, 
+ "freeSpins": { 
+ "amount": 0, 
+ "left": 0, 
+ "isPromotion": false, 
+ "roundWin": 180, 
+ "totalWin": 0, 
+ "totalBet": 0, 
+ "won": 0 
+ },
+
+ "promoFreeSpins": { 
+ "amount": 3, 
+ "left": 2, 
+ "betValue": 0.01, 
+ "level": 1, 
+ "totalWin": 0, 
+ "totalBet": 0 
+ }, 
+ "jackpots": [], 
+ "feature": { 
+ "name": "", 
+ "type": "", 
+ "isClosure": 0 
+ } 
+} 
+Player balance 
+It allows to get the balance of the player. 
+http method: POST 
+URL: /{operatorId}/player/balance 
+Example: https://game.adomain.com/production/v1/-TEST/player/balance Request 
+Parameter Type DescriptionplayerId String The player id sent in the response of the game start.
+
+Response 
+Parameter Type DescriptionstatusCode Int See Error Codesmessage String A string message that describes the status code.balance Money The player’s balance.
+
+Request 
+{ 
+ "playerId": "8bb5289dc906b0420c0d977480acc38d" 
+} 
+Response 
+{ 
+ "statusCode": 8000, 
+ "message": "Request processed successfully", 
+ "balance": 165.23 
+}
+
+Game Loader URL
+
+When a game will be launched via the standard game launcher URL provided by  Swinnt to the operator, if validate correctly, this will make a redirection to a game DNS  with the following structure: 
+https://${BASE_URL}?operatorId=${OperatorId}& gameId=${GameId}& languageId=${LanguageId}&client=${Client}& funMode=${FunMode}&  token=${token}&environment=${environment}& lobbyUrl=${lobbyUrl}&  reloadUrl=${reloadUrl}}& cashierUrl=${cashierUrl} 
+& extraParams=${extraParams} 
+where: 
+Parameter Type DescriptionoperatorId String It is an id that will be provided by the  team and is  the same for each game launcher URL you will build.gameId String It is an id that identifies a game in the  Platform.  The  team will provide the complete list of the  gamed id.languageId String An ISO-639-1 two letters language code.  
+(https://en.wikipedia.org/wiki/List_of_ISO_639- 1_codes)client String Identifies if the game has been launched from a desktop  or mobile web browser. There are two possible values: - desktop 
+- mobilefunMode Int Identifies if the game should be played as demo mode or  for real. There are two possible values: 
+- 0 (the game will be played with real money) - 1 (the game will be played as demo mode)token String It is the token that identifies a verified player on the  operator.environment String The  environmentlobbyUrl String The lobby urlreloadUrl String A reload urlcashierUrl String The url to redirect the player to deposit.extraParams String Additional parameters to send to the game client.
+
+The base BASE URL has a structure like environment-gameId 
+The query string parameters received in the game URL can be used in the RGS /start  API.
+
+Error Codes
+
+Number Description6000 OK6001 Bad request6002 ETC….6003 6004 6005 6006 6007 6008 6009 6010 6011 6012 6013 6014 6015 6016 6017 6018 6019 6020 6021 6022 6023 6024 6500 
+
+Data Types
+
+Type DescriptionMoney Decimal (20, 2) with a dot as decimal separator and no thousands  separator.
+
+

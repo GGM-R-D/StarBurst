@@ -1,0 +1,133 @@
+{
+  "gameId": "starburst",
+  "version": "1.0.0",
+  "board": {
+    "columns": 5,
+    "rows": 3
+  },
+  "symbolCatalog": [
+    { "sym": "Sym1", "code": "WILD", "displayName": "Wild", "type": "High" },
+    { "sym": "Sym2", "code": "BAR", "displayName": "Bar", "type": "High" },
+    { "sym": "Sym3", "code": "SEVEN", "displayName": "Seven", "type": "High" },
+    { "sym": "Sym4", "code": "RED", "displayName": "Red Gem", "type": "Low" },
+    { "sym": "Sym5", "code": "PURPLE", "displayName": "Purple Gem", "type": "Low" },
+    { "sym": "Sym6", "code": "BLUE", "displayName": "Blue Gem", "type": "Low" },
+    { "sym": "Sym7", "code": "GREEN", "displayName": "Green Gem", "type": "Low" },
+    { "sym": "Sym8", "code": "ORANGE", "displayName": "Orange Gem", "type": "Low" }
+  ],
+  "betLedger": {
+    "baseBetMultiplier": 1,
+    "anteBetMultiplier": 1,
+    "buyFreeSpinsCostMultiplier": 100
+  },
+  "betModes": {
+    "standard": {
+      "reelWeights": { "low": 70, "high": 30 }
+    },
+    "ante": {
+      "reelWeights": { "low": 70, "high": 30 }
+    }
+  },
+  "buyFeature": {
+    "enabledBetMode": "standard",
+    "costMultiplier": 100,
+    "entryReelKey": "reelsetBB"
+  },
+  "multiplier": {
+    "values": [2, 3, 4, 5],
+    "weights": {
+      "standard": {
+        "2": 50, "3": 30, "4": 15, "5": 5
+      },
+      "ante": {
+        "2": 50, "3": 30, "4": 15, "5": 5
+      },
+      "freeSpinsHigh": {
+        "2": 30, "3": 20, "4": 10, "5": 5
+      },
+      "freeSpinsLow": {
+        "2": 40, "3": 25, "4": 12, "5": 8
+      },
+      "freeSpinsSwitchThreshold": 250
+    }
+  },
+  "paytable": [
+    {
+      "symbolCode": "BAR",
+      "multipliers": [
+        { "count": 3, "multiplier": 5.0 },
+        { "count": 4, "multiplier": 25.0 },
+        { "count": 5, "multiplier": 250.0 }
+      ]
+    },
+    {
+      "symbolCode": "SEVEN",
+      "multipliers": [
+        { "count": 3, "multiplier": 5.0 },
+        { "count": 4, "multiplier": 25.0 },
+        { "count": 5, "multiplier": 250.0 }
+      ]
+    },
+    {
+      "symbolCode": "GREEN",
+      "multipliers": [
+        { "count": 3, "multiplier": 0.5 },
+        { "count": 4, "multiplier": 2.0 },
+        { "count": 5, "multiplier": 10.0 }
+      ]
+    },
+    {
+      "symbolCode": "RED",
+      "multipliers": [
+        { "count": 3, "multiplier": 0.4 },
+        { "count": 4, "multiplier": 1.5 },
+        { "count": 5, "multiplier": 8.0 }
+      ]
+    },
+    {
+      "symbolCode": "BLUE",
+      "multipliers": [
+        { "count": 3, "multiplier": 0.3 },
+        { "count": 4, "multiplier": 1.2 },
+        { "count": 5, "multiplier": 6.0 }
+      ]
+    },
+    {
+      "symbolCode": "PURPLE",
+      "multipliers": [
+        { "count": 3, "multiplier": 0.25 },
+        { "count": 4, "multiplier": 1.0 },
+        { "count": 5, "multiplier": 5.0 }
+      ]
+    },
+    {
+      "symbolCode": "ORANGE",
+      "multipliers": [
+        { "count": 3, "multiplier": 0.2 },
+        { "count": 4, "multiplier": 0.8 },
+        { "count": 5, "multiplier": 4.0 }
+      ]
+    }
+  ],
+  "betLevels": [0.5, 1.0, 2.0, 3.0, 5.0, 10.0],
+  "defaultBetIndex": 0,
+  "scatter": {
+    "rewards": []
+  },
+  "freeSpins": {
+    "initialSpins": 0,
+    "retriggerSpins": 0,
+    "retriggerScatterCount": 0
+  },
+  "reels": {
+    "sourceFile": "configs/starburstReelsets.json",
+    "keys": {
+      "high": "reelsetHigh",
+      "low": "reelsetLow",
+      "buy": "reelsetBB",
+      "freeSpins": "reelsetFreeSpins"
+    }
+  },
+  "maxWinMultiplier": 500
+}
+

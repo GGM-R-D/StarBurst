@@ -1,0 +1,29 @@
+{
+  "hud.round": "ROUND",
+  "hud.currentWin": "CURRENT WIN",
+  "hud.balance": "BALANCE",
+  "hud.totalBet": "TOTAL BET",
+  "hud.totalWin": "TOTAL WIN",
+  "hud.spin": "Spin",
+  "hud.buyFeature": "Buy Free Spins",
+  "hud.turbo": "Turbo",
+  "hud.turboOn": "Turbo ON",
+  "modal.bet.title": "Adjust Bet Amount",
+  "modal.sound.title": "Sound Settings",
+  "modal.sound.muteAll": "Mute All",
+  "modal.sound.unmuteAll": "Unmute All",
+  "modal.info.title": "Game Information",
+  "modal.info.rulesHeading": "Rules",
+  "modal.info.rulesBody": "Jungle Relics is a cascading slot game where winning symbols disappear and new symbols fall into place for multiple wins per spin.",
+  "modal.info.howToPlayHeading": "How to Play",
+  "modal.info.howToPlayList": [
+    "Set your bet amount using the bet adjustment button",
+    "Click SPIN to start the game",
+    "Match 3 or more symbols horizontally to win",
+    "Winning symbols cascade and new symbols fall into place",
+    "Free spins can be triggered by scatter symbols or purchased"
+  ],
+  "modal.info.paytableHeading": "Paytable",
+  "modal.info.paytableBody": "Symbol values are calculated based on your bet amount. Higher value symbols pay more when matched. Scatter triggers free spins; wild substitutes for other symbols."
+}
+

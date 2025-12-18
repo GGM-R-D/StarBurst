@@ -1,0 +1,13 @@
+{
+  "components": [
+    {
+      "path": "configs/JungleRelics.json",
+      "expectedHash": "A1FB0EEB9BC08F07DB213A8475CAC5B1A1537BE14F52D9D9F64ED946C3489A5A"
+    },
+    {
+      "path": "configs/JungleRelicsReelsets.json",
+      "expectedHash": "0B89FA33BB8387615FDA2C77A8C993EDF069A9B1EA0336CD51ED4E1B9F41E2E3"
+    }
+  ]
+}
+

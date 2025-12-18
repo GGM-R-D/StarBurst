@@ -1,0 +1,63 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: starburst-frontend
+  labels:
+    app: starburst-frontend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: starburst-frontend
+  template:
+    metadata:
+      labels:
+        app: starburst-frontend
+    spec:
+      containers:
+      - name: starburst-frontend
+        image: swr.cn-north-4.myhuaweicloud.com/YOUR_NAMESPACE/starburst-frontend:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 80
+          name: http
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 80
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 80
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: starburst-frontend-service
+  labels:
+    app: starburst-frontend
+spec:
+  type: ClusterIP
+  ports:
+  - port: 80
+    targetPort: 80
+    protocol: TCP
+    name: http
+  selector:
+    app: starburst-frontend
+

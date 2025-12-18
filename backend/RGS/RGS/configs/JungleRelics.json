@@ -1,0 +1,166 @@
+{
+  "gameId": "JungleRelics",
+  "version": "1.1.3",
+  "board": {
+    "columns": 6,
+    "rows": 5
+  },
+  "symbolCatalog": [
+    { "sym": "Sym1", "code": "FACE", "displayName": "Carved Face Scatter", "type": "Scatter" },
+    { "sym": "Sym2", "code": "BIRD", "displayName": "Golden Bird", "type": "High" },
+    { "sym": "Sym3", "code": "SCARAB", "displayName": "Jeweled Scarab", "type": "High" },
+    { "sym": "Sym4", "code": "DAGGER", "displayName": "Ritual Dagger", "type": "High" },
+    { "sym": "Sym5", "code": "POT", "displayName": "Ancestral Pot", "type": "High" },
+    { "sym": "Sym6", "code": "ORANGE", "displayName": "Amber Gem", "type": "Low" },
+    { "sym": "Sym7", "code": "PURPLE", "displayName": "Amethyst Gem", "type": "Low" },
+    { "sym": "Sym8", "code": "GREEN", "displayName": "Emerald Gem", "type": "Low" },
+    { "sym": "Sym9", "code": "RED", "displayName": "Ruby Gem", "type": "Low" },
+    { "sym": "Sym10", "code": "BLUE", "displayName": "Sapphire Gem", "type": "Low" },
+    { "sym": "Sym11", "code": "MULTIPLIER", "displayName": "Multiplier Orb", "type": "Multiplier" }
+  ],
+  "betLedger": {
+    "baseBetMultiplier": 20,
+    "anteBetMultiplier": 25,
+    "buyFreeSpinsCostMultiplier": 100
+  },
+  "betModes": {
+    "standard": {
+      "reelWeights": { "low": 860, "high": 140 }
+    },
+    "ante": {
+      "reelWeights": { "low": 160, "high": 840 }
+    }
+  },
+  "buyFeature": {
+    "enabledBetMode": "standard",
+    "costMultiplier": 100,
+    "entryReelKey": "reelsetBB"
+  },
+  "multiplier": {
+    "values": [2, 3, 4, 5, 6, 8, 10, 12, 15, 20, 25, 50, 100, 250, 500],
+    "weights": {
+      "standard": {
+        "2": 200, "3": 200, "4": 370, "5": 350, "6": 300,
+        "8": 600, "10": 350, "12": 240, "15": 30, "20": 25,
+        "25": 15, "50": 10, "100": 5, "250": 2, "500": 1
+      },
+      "ante": {
+        "2": 400, "3": 410, "4": 480, "5": 470, "6": 350,
+        "8": 200, "10": 150, "12": 40, "15": 30, "20": 25,
+        "25": 15, "50": 10, "100": 5, "250": 2, "500": 1
+      },
+      "freeSpinsHigh": {
+        "2": 1100, "3": 700, "4": 350, "5": 250, "6": 200,
+        "8": 100, "10": 50, "12": 40, "15": 30, "20": 25,
+        "25": 15, "50": 10, "100": 5, "250": 2, "500": 1
+      },
+      "freeSpinsLow": {
+        "2": 1700, "3": 1000, "4": 500, "5": 300, "6": 200,
+        "8": 100, "10": 50, "12": 40, "15": 30, "20": 25,
+        "25": 15, "50": 10, "100": 1, "250": 0, "500": 0
+      },
+      "freeSpinsSwitchThreshold": 250
+    }
+  },
+  "paytable": [
+    {
+      "symbolCode": "BIRD",
+      "multipliers": [
+        { "count": 8, "multiplier": 10.0 },
+        { "count": 10, "multiplier": 25.0 },
+        { "count": 12, "multiplier": 50.0 },
+        { "count": 15, "multiplier": 100.0 }
+      ]
+    },
+    {
+      "symbolCode": "SCARAB",
+      "multipliers": [
+        { "count": 8, "multiplier": 5.0 },
+        { "count": 10, "multiplier": 10.0 },
+        { "count": 12, "multiplier": 25.0 },
+        { "count": 15, "multiplier": 50.0 }
+      ]
+    },
+    {
+      "symbolCode": "DAGGER",
+      "multipliers": [
+        { "count": 8, "multiplier": 4.0 },
+        { "count": 10, "multiplier": 10.0 },
+        { "count": 12, "multiplier": 30.0 }
+      ]
+    },
+    {
+      "symbolCode": "POT",
+      "multipliers": [
+        { "count": 8, "multiplier": 3.0 },
+        { "count": 10, "multiplier": 4.0 },
+        { "count": 12, "multiplier": 24.0 }
+      ]
+    },
+    {
+      "symbolCode": "GREEN",
+      "multipliers": [
+        { "count": 8, "multiplier": 1.0 },
+        { "count": 10, "multiplier": 1.5 },
+        { "count": 12, "multiplier": 10.0 }
+      ]
+    },
+    {
+      "symbolCode": "RED",
+      "multipliers": [
+        { "count": 8, "multiplier": 0.8 },
+        { "count": 10, "multiplier": 1.2 },
+        { "count": 12, "multiplier": 8.0 }
+      ]
+    },
+    {
+      "symbolCode": "BLUE",
+      "multipliers": [
+        { "count": 8, "multiplier": 0.5 },
+        { "count": 10, "multiplier": 1.0 },
+        { "count": 12, "multiplier": 5.0 }
+      ]
+    },
+    {
+      "symbolCode": "PURPLE",
+      "multipliers": [
+        { "count": 8, "multiplier": 0.4 },
+        { "count": 10, "multiplier": 0.9 },
+        { "count": 12, "multiplier": 4.0 }
+      ]
+    },
+    {
+      "symbolCode": "ORANGE",
+      "multipliers": [
+        { "count": 8, "multiplier": 0.25 },
+        { "count": 10, "multiplier": 0.75 },
+        { "count": 12, "multiplier": 2.0 }
+      ]
+    }
+  ],
+  "betLevels": [0.20, 0.40, 1.00, 2.00, 5.00, 10.00],
+  "defaultBetIndex": 0,
+  "scatter": {
+    "rewards": [
+      { "count": 4, "payoutMultiplier": 3.0, "freeSpinsAwarded": 15 },
+      { "count": 5, "payoutMultiplier": 5.0, "freeSpinsAwarded": 15 },
+      { "count": 6, "payoutMultiplier": 100.0, "freeSpinsAwarded": 15 }
+    ]
+  },
+  "freeSpins": {
+    "initialSpins": 15,
+    "retriggerSpins": 5,
+    "retriggerScatterCount": 3
+  },
+  "reels": {
+    "sourceFile": "configs/JungleRelicsReelsets.json",
+    "keys": {
+      "high": "reelsetHigh",
+      "low": "reelsetLow",
+      "buy": "reelsetBB",
+      "freeSpins": "reelsetFreeSpins"
+    }
+  },
+  "maxWinMultiplier": 39221
+}
+

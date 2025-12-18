@@ -1,0 +1,6 @@
+@RngHost_HostAddress = http://localhost:5258
+
+GET {{RngHost_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

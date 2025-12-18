@@ -1,0 +1,35 @@
+@RGS_HostAddress = http://localhost:5062
+
+### Start session
+POST {{RGS_HostAddress}}/operator/demo/JungleRelics/start
+Content-Type: application/json
+
+{
+  "funMode": 1,
+  "playerToken": "demo-token"
+}
+
+### Base spin (standard mode)
+POST {{RGS_HostAddress}}/JungleRelics/play
+Content-Type: application/json
+
+{
+  "sessionId": "{{sessionId}}",
+  "baseBet": 0.2,
+  "betMode": "standard",
+  "bets": [
+    { "betType": "BASE", "amount": 0.2 }
+  ]
+}
+
+### Buy Free Spins
+POST {{RGS_HostAddress}}/JungleRelics/buy-free-spins
+Content-Type: application/json
+
+{
+  "sessionId": "{{sessionId}}",
+  "baseBet": 0.2,
+  "betMode": "standard"
+}
+
+###

@@ -1,0 +1,154 @@
+
+Introduction
+
+ Platform exposes a Random Number Generator that can be invoked via http  API. 
+The  Platform RNG implements the Fortuna algorithm, which is a  cryptographically secure pseudorandom number generator. 
+For local development purpose,  can provide a public API URL secured with IP  Whitelisting. 
+When instead you will be deploying the game into the  Platform, you will be  deploying your game engine into the same VPC and private subnet of the RNG, which  means that you will be invoking the RNG service with a local url which has the  following structure: 
+http://-rng-fortuna.environment:8080/resource_name 
+where 
+- environment: is one of the environments where the game is running and will be  provided by . 
+   - resource_name: is one of the REST resources discussed in the API section. Example:  
+http://-rng-fortuna.development:8080/pools 
+http://-rng-fortuna.staging:8080/pools 
+When you will be deploying the game engine, you can create a container environment  variable where to pass the base RNG service URL. For instance, you can create an  environment variable as follow.
+
+
+Key: RNG_BASE_URL 
+Value: http://-rng-fortuna.development:8080 
+And then to build into your game engine the API call using the variable as shown in the  example below. 
+const rngBaseUrl = process.env.RNG_BASE_URL || ""; 
+const rngServiceUrl = `${rngBaseUrl}/pools` 
+const rngPayload = { 
+ "pools": [ 
+{"min": 1, "max": 100, "size": 5} 
+] 
+ } 
+Then, depending of which programming language you are using, you will be invoking the RNG API using an http client such as Axios if you are using NodeJS
+
+RNG API
+
+The RNG API methods are RESTFUL API with (POST) request and response formatted as  JSON objects. 
+RNG Request 
+This method generates a random number within all the 232 possible int values. 
+http method: GET 
+URL: /rng 
+Response 
+Parameter Type DescriptionRandom Int The random number generated
+
+Example Response: 
+{ 
+ "random": 1091765634 
+} 
+RNG Min/Max Request 
+This method generates an Integer random number between the min and max values  sent into the body request 
+Private API: 
+HTTP method: GET 
+URL: /rng?min=value&max=value 
+Example: 
+http://-rng-fortuna.development:8080/rng?min=5&max=20 
+Request Parameters 
+Parameter Type DescriptionMin Int The minimum value for the generated random numberMax Int The maximum value for the generated random number
+
+Response
+Parameter Type Description
+
+
+Random Int The random number generated
+
+Example 
+{ 
+ "random": 6 
+} 
+Jurisdiction enforced RNG request. 
+Requirements: 
+• The roundId and gameId must be included in the RNG request for compliance. • Upon submission, the RNG request is persisted to DynamoDB for tracking  purposes. 
+Procedure 
+• Include roundId and gameId: 
+o When submitting an RNG request, ensure that both roundId and  gameId are provided. These parameters are essential for compliance  with jurisdictional requirements. They uniquely identify the game and  round for which the RNG is being generated. 
+• Submit RNG Request: 
+o Once the necessary parameters (roundId and gameId) are included,  submit the RNG request to the designated endpoint. 
+• Persistence to DynamoDB: 
+o Upon receipt of the RNG request, the system will persist the request  data to DynamoDB. This step is crucial for tracking and audit purposes. 
+HTTP Method: GET 
+URL: /rng?min=value&max=value[&gameId=value][&roundId=value] Parameters
+Parameter |  Type            |Required  | DescriptionMin Int Yes The minimum value for the generated  random numberMax Int Yes The maximum value for the generated  random numbergameId String No An optional identifier for the game  
+associated with the random number  generation. If provided, this parameter helps  track random number generation activities  for a specific game (sent from RGS -> Game server -> RNG | used by the regulator)
+
+roundId string No An optional identifier for the round  
+associated with the random number  generation. If provided, this parameter helps  track random number generation activities  for a specific round within a game (sent from RGS -> Game server -> RNG used by the regulator)
+
+Response 
+Parameter Type DescriptionRandom Int The random number generated
+
+Example Response 
+{ 
+ "random": 1091765634 
+} 
+Pools API
+
+Pools Request 
+Purpose 
+This method generates a pool of Integer random number following the requirements  sent within the body request. 
+Endpoint Details: 
+HTTP Method: POST 
+URL: /pools 
+Request: 
+Parameters: 
+Parameter Type Descriptionpools Array An array of Pool objects  defining the requirements  for each pool
+
+Pool Object: 
+- min: The lower number of the range that will be used by the RNG. 
+- max: The higher number of the range that will be used by the RNG. If not  specified, the maximum Integer limit will be used. 
+- size: The size of the pool, indicating how many numbers will be generated in  the pool. If not specified, 1 will be taken as the default.
+Response 
+Parameter Type DescriptionPools Array or Arrays An array containing arrays  of integers.
+
+Example Response 
+{ 
+ "pools": [ 
+ [46, 3, 70, 1, 42], 
+ [7, 5, 2] 
+ ] 
+} 
+
+
+
+
+NOTE from ANDRII:  it is better to make pools with map<string,array>, to better array identification on the server side:  
+Example Request
+ { 
+ "pools": {
+ “REAL_STOPS”: {min: 0, max: 100, size 5}, 
+ “FREE_SPINS”: {min: 0, max: 100, size 3} 
+ }
+} 
+
+Example Response 
+{ 
+ "pools": {
+ “REAL_STOPS”: [46, 3, 70, 1, 42], 
+ “FREE_SPINS”: [7, 5, 2] 
+ }
+} 
+Jurisdiction Enforced Pools Request 
+This extension ensures compliance with jurisdictional requirements by associating  each random number pool generation with specific round and game identifiers. 
+Request Parameters
+Parameter Type Descriptionpools Array An array of pool objects defining the  requirements for each poolgameId String An optional identifier for the game  
+associated with the random number  generation. If provided, this parameter helps  track random number generation activities  for a specific gameroundId string An optional identifier for the round  associated with the random number  generation. If provided, this parameter helps  track random number generation activities  for a specific round within a game
+
+Example Request: 
+{ 
+ "pools": [ 
+ {"min": 1, "max": 100, "size": 5}, 
+ {"min": 1, "max": 10, "size": 3} 
+ ], 
+ "roundId": "roundId", 
+ "gameId": "gameId" 
+} 
+Response 
+The response structure remains the same as in the standard Pools Request. 
+Additional Information 
+In the request, including the `gameId` and `roundId` parameters associates the  generated pool of random numbers with specific game and round instances. This  facilitates tracking and logging of random number generation activities for audit and  compliance purposes.
+
+

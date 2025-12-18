@@ -1,0 +1,23 @@
+{
+  "grid": {
+    "columns": 6,
+    "rows": 5
+  },
+  "assets": [
+    { "alias": "BACKGROUND_TEXTURE", "path": "/images/backround/bg.png" },
+    { "alias": "STONE_TEXTURE", "path": "/images/backround/Table.png" },
+    { "alias": "SCATTER", "path": "/images/symbols/Face.webp" },
+    { "alias": "ORANGE", "path": "/images/symbols/Orange.webp" },
+    { "alias": "PURPLE", "path": "/images/symbols/Purple.webp" },
+    { "alias": "GREEN", "path": "/images/symbols/Green.webp" },
+    { "alias": "RED", "path": "/images/symbols/Red.webp" },
+    { "alias": "BLUE", "path": "/images/symbols/Blue.webp" },
+    { "alias": "POT", "path": "/images/symbols/Pot.webp" },
+    { "alias": "DAGGER", "path": "/images/symbols/Dagger.webp" },
+    { "alias": "SCARAB", "path": "/images/symbols/Scarab.webp" },
+    { "alias": "BIRD", "path": "/images/symbols/Bird.webp" },
+    { "alias": "MULTIPLIER", "path": "/images/symbols/Multiplier.webp" },
+    { "alias": "PLACEHOLDER", "path": "/images/symbols/Face.webp" }
+  ]
+}
+
