@@ -56,7 +56,10 @@ export class PaylineView extends Container {
   }
 
   public showPaylines(wins: Win[]): void {
+    // DISABLED: Payline visualization removed per user request
+    // Symbol highlights are working correctly, but payline lines are incorrect
     this.clearPaylines();
+    return;
 
     if (!this.layout || wins.length === 0) return;
 
@@ -190,6 +193,13 @@ export class PaylineView extends Container {
    * @param isAutoSpin - If true, show for 3 seconds then complete. If false, cycle continuously until cancelled.
    */
   public async cycleThroughPaylines(wins: Win[], onComplete?: () => void, isAutoSpin: boolean = false): Promise<void> {
+    // DISABLED: Payline visualization removed per user request
+    // Symbol highlights are working correctly, but payline lines are incorrect
+    this.clearPaylines();
+    this.isAnimating = false;
+    onComplete?.();
+    return;
+
     // Reset cancellation flag
     this.animationCancelled = false;
     this.isAnimating = true;

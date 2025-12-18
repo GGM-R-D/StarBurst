@@ -34,10 +34,7 @@ export class BottomBar extends Container {
   private balanceValueText: Text;
   private currentSpeed: 1 | 2 | 3 = 1;
   private readonly linesCount = 10; // Fixed 10 paylines
-  private readonly availableLineBets: number[] = [0.10, 0.20, 0.50, 1.0, 2.0, 5.0, 10.0];
-  private currentBetIndex: number = 4; // Default to 2.0 (index 4)
-  private currentLineBet: number = 2.0; // Default line bet
-  private currentBet: number = 20.0; // Default total bet (2.0 * 10)
+  private currentBet: number = 1.0; // Default total bet (R1)
   private currentBalance: number = 1000.0;
   private callbacks: BottomBarCallbacks;
   private screenWidth: number = 1920;
@@ -55,15 +52,15 @@ export class BottomBar extends Container {
       fontFamily: 'Arial',
       fontWeight: 'bold'
     });
-    this.betValueText = new Text('2.50', {
+    this.betValueText = new Text('1', {
       fill: 0xffaa00, // Bright yellow-orange
-      fontSize: 18,
+      fontSize: 32,
       fontFamily: 'Arial',
       fontWeight: 'bold'
     });
-    // +/- buttons removed - bet panel is now a button that opens popup
-    // this.betDecreaseButton = this.createBetControlButton('-');
-    // this.betIncreaseButton = this.createBetControlButton('+');
+    // Create +/- buttons for bet control
+    this.betDecreaseButton = this.createBetControlButton('-');
+    this.betIncreaseButton = this.createBetControlButton('+');
 
     // Create auto-spin button (left of spin)
     this.autoSpinButton = this.createAutoSpinButton();
@@ -93,9 +90,8 @@ export class BottomBar extends Container {
     this.addChild(this.betPanel);
     this.addChild(this.betLabel);
     this.addChild(this.betValueText);
-    // Remove +/- buttons - bet panel is now a button that opens popup
-    // this.addChild(this.betDecreaseButton);
-    // this.addChild(this.betIncreaseButton);
+    this.addChild(this.betDecreaseButton);
+    this.addChild(this.betIncreaseButton);
     this.addChild(this.autoSpinButton);
     this.addChild(this.spinButton);
     this.addChild(this.turboButton);
@@ -113,43 +109,25 @@ export class BottomBar extends Container {
   }
 
   /**
-   * Create bet panel as a button with dark brown background and thin gold border.
+   * Create bet panel with dark brown background and thin gold border.
+   * Divided into three sections: minus button, bet value, plus button.
    */
   private createBetPanel(width: number, height: number): void {
     this.betPanel.clear();
 
-    // Dark brown background (pill-shaped) - styled as a button
+    // Dark brown background (pill-shaped)
     this.betPanel.beginFill(0x3d2817, 0.95); // Dark brown
     this.betPanel.lineStyle(2, 0xffd700, 1); // Thin gold border
     this.betPanel.drawRoundedRect(0, 0, width, height, height / 2);
     this.betPanel.endFill();
     
-    // Make bet panel clickable to open bet popup
-    this.betPanel.eventMode = 'static';
-    this.betPanel.cursor = 'pointer';
-    
-    // Add hover effects to make it look like a button
-    this.betPanel.on('pointerover', () => {
-      this.betPanel.clear();
-      this.betPanel.beginFill(0x4a3520, 1); // Lighter brown on hover
-      this.betPanel.lineStyle(2, 0xffd700, 1);
-      this.betPanel.drawRoundedRect(0, 0, width, height, height / 2);
-      this.betPanel.endFill();
-      this.betPanel.scale.set(1.05); // Slight scale on hover
-    });
-    
-    this.betPanel.on('pointerout', () => {
-      this.betPanel.clear();
-      this.betPanel.beginFill(0x3d2817, 0.95); // Original color
-      this.betPanel.lineStyle(2, 0xffd700, 1);
-      this.betPanel.drawRoundedRect(0, 0, width, height, height / 2);
-      this.betPanel.endFill();
-      this.betPanel.scale.set(1.0); // Reset scale
-    });
-    
-    this.betPanel.on('pointertap', () => {
-      this.callbacks.onBetClick?.();
-    });
+    // Draw vertical divider lines (gold)
+    const sectionWidth = width / 3;
+    this.betPanel.lineStyle(1, 0xffd700, 1);
+    this.betPanel.moveTo(sectionWidth, 0);
+    this.betPanel.lineTo(sectionWidth, height);
+    this.betPanel.moveTo(sectionWidth * 2, 0);
+    this.betPanel.lineTo(sectionWidth * 2, height);
   }
 
   /**
@@ -166,22 +144,26 @@ export class BottomBar extends Container {
   }
 
   /**
-   * Create bet control button (- or +) integrated into the pill shape.
+   * Create bet control button (- or +) for the bet panel sections.
    */
   private createBetControlButton(label: string): Graphics {
     const button = new Graphics();
-    const radius = 16;
-
-    // Gold border circle
-    button.lineStyle(2, 0xffd700, 1);
-    button.beginFill(0x3d2817, 0.95); // Dark brown to match panel
-    button.drawCircle(0, 0, radius);
+    
+    // White circle for minus, green circle for plus
+    if (label === '+') {
+      button.beginFill(0x00aa00, 1); // Green for plus
+      button.lineStyle(2, 0x00cc00, 1);
+    } else {
+      button.beginFill(0xffffff, 1); // White for minus
+      button.lineStyle(2, 0xcccccc, 1);
+    }
+    button.drawCircle(0, 0, 20);
     button.endFill();
 
-    // Label text (yellow-orange)
+    // Label text
     const text = new Text(label, {
-      fill: 0xffaa00, // Bright yellow-orange
-      fontSize: 20,
+      fill: label === '+' ? 0xffffff : 0x000000, // White for plus, black for minus
+      fontSize: 24,
       fontFamily: 'Arial',
       fontWeight: 'bold'
     });
@@ -191,10 +173,36 @@ export class BottomBar extends Container {
     button.eventMode = 'static';
     button.cursor = 'pointer';
 
+    // Click handler
+    button.on('pointertap', () => {
+      this.callbacks.onButtonClick?.();
+      if (label === '-') {
+        this.decreaseBet();
+      } else {
+        this.increaseBet();
+      }
+    });
+
     button.on('pointerover', () => button.scale.set(1.1));
     button.on('pointerout', () => button.scale.set(1.0));
 
     return button;
+  }
+
+  private decreaseBet(): void {
+    const newBet = getPreviousBetAmount(this.currentBet, 0.1);
+    if (newBet !== this.currentBet) {
+      this.setBet(newBet);
+      this.callbacks.onBetDecrease?.();
+    }
+  }
+
+  private increaseBet(): void {
+    const newBet = getNextBetAmount(this.currentBet, 5.0);
+    if (newBet !== this.currentBet) {
+      this.setBet(newBet);
+      this.callbacks.onBetIncrease?.();
+    }
   }
 
 
@@ -254,6 +262,7 @@ export class BottomBar extends Container {
 
     spin.eventMode = 'static';
     spin.cursor = 'pointer';
+    spin.interactive = true;
 
     // Hover effect
     spin.on('pointerover', () => {
@@ -262,6 +271,8 @@ export class BottomBar extends Container {
     spin.on('pointerout', () => {
       spin.scale.set(1.0);
     });
+    
+    console.info('[BottomBar] Spin button created, eventMode:', spin.eventMode, 'interactive:', spin.interactive);
 
     return spin;
   }
@@ -335,6 +346,7 @@ export class BottomBar extends Container {
     // Users adjust bet via the bet popup window
 
     this.spinButton.on('pointertap', () => {
+      console.info('[BottomBar] Spin button clicked, currentBet:', this.getCurrentBet());
       // Spin sound is handled in GameApp
       this.callbacks.onSpin?.();
     });
@@ -367,24 +379,28 @@ export class BottomBar extends Container {
   }
 
   private updateBetText(suppressCallback: boolean = false): void {
-    // Calculate total bet from line bet
-    this.currentBet = this.currentLineBet * this.linesCount;
-    // Display total bet (line bet * 10 lines)
-    this.betValueText.text = this.currentBet.toFixed(2);
+    // Display total bet (format as integer if whole number, otherwise 2 decimals)
+    const betValue = this.currentBet;
+    if (betValue % 1 === 0) {
+      this.betValueText.text = betValue.toString();
+    } else {
+      this.betValueText.text = betValue.toFixed(2);
+    }
     
     // Notify callback of bet change (unless suppressed during initialization)
     if (!suppressCallback && this.callbacks.onBetChanged) {
-      this.callbacks.onBetChanged(this.currentLineBet, this.currentBet);
+      const lineBet = roundToTwoDecimals(this.currentBet / this.linesCount);
+      this.callbacks.onBetChanged(lineBet, this.currentBet);
     }
   }
 
   public setSpinEnabled(enabled: boolean): void {
     // Set button interactive state based on enabled flag
     this.spinButton.eventMode = enabled ? 'static' : 'none';
-    this.spinButton.buttonMode = enabled;
+    this.spinButton.interactive = enabled;
     this.spinButton.cursor = enabled ? 'pointer' : 'default';
     this.spinButton.alpha = enabled ? 1 : 0.6; // More visibly disabled when not enabled
-    console.info(`[BottomBar] Spin button enabled: ${enabled}, interactive: ${this.spinButton.interactive}`);
+    console.info(`[BottomBar] Spin button enabled: ${enabled}, eventMode: ${this.spinButton.eventMode}, interactive: ${this.spinButton.interactive}`);
   }
 
   public setSpinButtonText(text: string): void {
@@ -417,16 +433,17 @@ export class BottomBar extends Container {
   }
 
   public setBet(value: number): void {
-    // This sets total bet - convert to line bet
-    const lineBet = roundToTwoDecimals(value / this.linesCount);
+    // This sets total bet directly
+    const rounded = roundToTwoDecimals(value);
     // Only update if the bet actually changed to avoid unnecessary callbacks
-    if (Math.abs(this.currentLineBet - lineBet) > 0.001) {
-      this.setLineBet(lineBet);
+    if (Math.abs(this.currentBet - rounded) > 0.001) {
+      this.currentBet = rounded;
+      this.updateBetText();
     }
   }
   
   public getCurrentLineBet(): number {
-    return roundToTwoDecimals(this.currentLineBet);
+    return roundToTwoDecimals(this.currentBet / this.linesCount);
   }
   
   public getCurrentTotalBet(): number {
@@ -434,24 +451,9 @@ export class BottomBar extends Container {
   }
   
   public setLineBet(lineBet: number): void {
-    // Only update if bet actually changed to avoid unnecessary callbacks
-    if (Math.abs(this.currentLineBet - lineBet) < 0.001) {
-      return; // Bet hasn't changed, skip update
-    }
-    
-    // Find closest available bet
-    let closestIndex = 0;
-    let closestDiff = Math.abs(this.availableLineBets[0] - lineBet);
-    for (let i = 1; i < this.availableLineBets.length; i++) {
-      const diff = Math.abs(this.availableLineBets[i] - lineBet);
-      if (diff < closestDiff) {
-        closestDiff = diff;
-        closestIndex = i;
-      }
-    }
-    this.currentBetIndex = closestIndex;
-    this.currentLineBet = this.availableLineBets[this.currentBetIndex];
-    this.updateBetText();
+    // Convert line bet to total bet
+    const totalBet = roundToTwoDecimals(lineBet * this.linesCount);
+    this.setBet(totalBet);
   }
   
   public setBetEnabled(enabled: boolean): void {
@@ -491,17 +493,25 @@ export class BottomBar extends Container {
     this.betPanel.x = betPanelX;
     this.betPanel.y = bottomBarY;
 
-    // Bet label (centered, top portion of button)
+    // Bet panel is divided into 3 sections
+    const sectionWidth = betPanelWidth / 3;
+    
+    // Minus button (left section)
+    this.betDecreaseButton.x = betPanelX + sectionWidth / 2;
+    this.betDecreaseButton.y = bottomBarY + betPanelHeight / 2;
+    
+    // Bet label and value (center section)
     this.betLabel.anchor.set(0.5, 0.5);
     this.betLabel.x = betPanelX + betPanelWidth / 2;
     this.betLabel.y = bottomBarY + 25; // Top portion
-
-    // Bet value (centered below label)
+    
     this.betValueText.anchor.set(0.5, 0.5);
     this.betValueText.x = betPanelX + betPanelWidth / 2;
     this.betValueText.y = bottomBarY + 50; // Bottom portion
-
-    // +/- buttons removed - bet panel is now a button that opens popup
+    
+    // Plus button (right section)
+    this.betIncreaseButton.x = betPanelX + betPanelWidth - sectionWidth / 2;
+    this.betIncreaseButton.y = bottomBarY + betPanelHeight / 2;
 
     // Auto-spin button (left of spin, spaced out)
     this.autoSpinButton.x = centerX - 120;

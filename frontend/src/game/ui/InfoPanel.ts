@@ -22,7 +22,7 @@ export class InfoPanel extends Container {
   private callbacks: InfoPanelCallbacks;
   private viewportWidth: number;
   private viewportHeight: number;
-  private currentLineBet: number = 0.20; // Default line bet
+  private currentLineBet: number = 0.10; // Default line bet (R1 total bet / 10 lines)
   private _contentX: number = 0;
   private _contentY: number = 0;
   private _contentWidth: number = 0;
@@ -30,7 +30,7 @@ export class InfoPanel extends Container {
   private paytableMask: Graphics;
   private rulesMask: Graphics;
 
-  constructor(viewportWidth: number, viewportHeight: number, initialLineBet: number = 0.20, callbacks: InfoPanelCallbacks = {}) {
+  constructor(viewportWidth: number, viewportHeight: number, initialLineBet: number = 0.10, callbacks: InfoPanelCallbacks = {}) {
     super();
     this.viewportWidth = viewportWidth;
     this.viewportHeight = viewportHeight;

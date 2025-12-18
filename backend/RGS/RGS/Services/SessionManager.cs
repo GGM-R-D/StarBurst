@@ -7,7 +7,7 @@ public sealed class SessionManager
 {
     private readonly ConcurrentDictionary<string, SessionRecord> _sessions = new();
 
-    public SessionRecord CreateSession(string operatorId, string gameId, string playerToken, bool funMode)
+    public SessionRecord CreateSession(string operatorId, string gameId, string playerToken, bool funMode, decimal initialBalance = 10000m)
     {
         var sessionId = Guid.NewGuid().ToString("N");
         var record = new SessionRecord(
@@ -17,7 +17,8 @@ public sealed class SessionManager
             playerToken,
             funMode,
             DateTimeOffset.UtcNow,
-            EngineSessionState.Create());
+            EngineSessionState.Create(),
+            initialBalance);
 
         _sessions[sessionId] = record;
         return record;
@@ -35,6 +36,27 @@ public sealed class SessionManager
 
         record.State = state;
     }
+
+    public void UpdateBalance(string sessionId, decimal bet, decimal win)
+    {
+        if (!_sessions.TryGetValue(sessionId, out var record))
+        {
+            throw new InvalidOperationException("Session not found.");
+        }
+
+        // Deduct bet and add win
+        record.Balance = record.Balance - bet + win;
+    }
+
+    public decimal GetBalance(string sessionId)
+    {
+        if (!_sessions.TryGetValue(sessionId, out var record))
+        {
+            return 10000m; // Default balance if session not found
+        }
+
+        return record.Balance;
+    }
 }
 
 public sealed class SessionRecord
@@ -46,7 +68,8 @@ public sealed class SessionRecord
         string playerToken,
         bool funMode,
         DateTimeOffset createdAt,
-        EngineSessionState state)
+        EngineSessionState state,
+        decimal initialBalance = 10000m)
     {
         SessionId = sessionId;
         OperatorId = operatorId;
@@ -55,6 +78,7 @@ public sealed class SessionRecord
         FunMode = funMode;
         CreatedAt = createdAt;
         State = state;
+        Balance = initialBalance;
     }
 
     public string SessionId { get; }
@@ -64,5 +88,6 @@ public sealed class SessionRecord
     public bool FunMode { get; }
     public DateTimeOffset CreatedAt { get; }
     public EngineSessionState State { get; set; }
+    public decimal Balance { get; set; }
 }
 

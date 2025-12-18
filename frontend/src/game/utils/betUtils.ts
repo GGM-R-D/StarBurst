@@ -1,82 +1,65 @@
 /**
  * Bet amount utilities for handling bet increments and precision.
+ * Uses exact bet levels from backend configuration.
  */
 
+// Bet levels from backend config: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.2, 1.4, 1.5, 1.6, 1.8, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0]
+const BET_LEVELS = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.2, 1.4, 1.5, 1.6, 1.8, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0];
+
 /**
- * Calculate the next bet amount based on custom increment rules:
- * - R0 - R2: increments of 0.10
- * - R2 - R5: increments of 0.50
- * - R5 - R20: increments of R1
- * - R20 - R50: increments of R5
- * - R50 - R100: increments of R10
+ * Get the closest bet level to the current bet.
  */
-export function getNextBetAmount(currentBet: number, maxBet: number = 100): number {
-  const rounded = roundToTwoDecimals(currentBet);
+function getClosestBetLevel(bet: number): number {
+  const rounded = roundToTwoDecimals(bet);
+  let closest = BET_LEVELS[0];
+  let minDiff = Math.abs(rounded - closest);
   
-  if (rounded < 2.0) {
-    // R0 - R2: increments of 0.10
-    const next = rounded + 0.10;
-    return Math.min(next, 2.0);
-  } else if (rounded < 5.0) {
-    // R2 - R5: increments of 0.50
-    const next = rounded + 0.50;
-    return Math.min(next, 5.0);
-  } else if (rounded < 20.0) {
-    // R5 - R20: increments of R1
-    const next = Math.ceil(rounded) + 1.0;
-    return Math.min(next, 20.0);
-  } else if (rounded < 50.0) {
-    // R20 - R50: increments of R5
-    const next = Math.ceil(rounded / 5.0) * 5.0;
-    if (next <= rounded) {
-      return rounded + 5.0;
+  for (const level of BET_LEVELS) {
+    const diff = Math.abs(rounded - level);
+    if (diff < minDiff) {
+      minDiff = diff;
+      closest = level;
     }
-    return Math.min(next, 50.0);
-  } else if (rounded < maxBet) {
-    // R50 - R100: increments of R10
-    const next = Math.ceil(rounded / 10.0) * 10.0;
-    if (next <= rounded) {
-      return rounded + 10.0;
-    }
-    return Math.min(next, maxBet);
   }
   
-  return maxBet;
+  return closest;
 }
 
 /**
- * Calculate the previous bet amount based on custom increment rules.
+ * Calculate the next bet amount from the bet levels array.
  */
-export function getPreviousBetAmount(currentBet: number, minBet: number = 0.10): number {
+export function getNextBetAmount(currentBet: number, maxBet: number = 5.0): number {
   const rounded = roundToTwoDecimals(currentBet);
+  const currentIndex = BET_LEVELS.findIndex(level => level >= rounded);
   
-  if (rounded <= 2.0) {
-    // R0 - R2: decrements of 0.10
-    const prev = rounded - 0.10;
-    return Math.max(prev, minBet);
-  } else if (rounded <= 5.0) {
-    // R2 - R5: decrements of 0.50
-    const prev = rounded - 0.50;
-    return Math.max(prev, 2.0);
-  } else if (rounded <= 20.0) {
-    // R5 - R20: decrements of R1
-    const prev = Math.floor(rounded) - 1.0;
-    return Math.max(prev, 5.0);
-  } else if (rounded <= 50.0) {
-    // R20 - R50: decrements of R5
-    const prev = Math.floor(rounded / 5.0) * 5.0;
-    if (prev >= rounded) {
-      return rounded - 5.0;
-    }
-    return Math.max(prev, 20.0);
-  } else {
-    // R50 - R100: decrements of R10
-    const prev = Math.floor(rounded / 10.0) * 10.0;
-    if (prev >= rounded) {
-      return rounded - 10.0;
-    }
-    return Math.max(prev, 50.0);
+  if (currentIndex === -1) {
+    // Current bet is less than all levels, return first level
+    return BET_LEVELS[0];
   }
+  
+  if (currentIndex < BET_LEVELS.length - 1) {
+    // Return next level
+    return Math.min(BET_LEVELS[currentIndex + 1], maxBet);
+  }
+  
+  // Already at max, return current
+  return Math.min(BET_LEVELS[BET_LEVELS.length - 1], maxBet);
+}
+
+/**
+ * Calculate the previous bet amount from the bet levels array.
+ */
+export function getPreviousBetAmount(currentBet: number, minBet: number = 0.1): number {
+  const rounded = roundToTwoDecimals(currentBet);
+  const currentIndex = BET_LEVELS.findIndex(level => level >= rounded);
+  
+  if (currentIndex === 0 || currentIndex === -1) {
+    // At first level or below all levels, return min
+    return Math.max(BET_LEVELS[0], minBet);
+  }
+  
+  // Return previous level
+  return Math.max(BET_LEVELS[currentIndex - 1], minBet);
 }
 
 /**
@@ -88,28 +71,16 @@ export function roundToTwoDecimals(value: number): number {
 }
 
 /**
- * Generate all valid bet amounts based on increment rules.
+ * Generate all valid bet amounts from the bet levels array.
  */
-export function generateBetAmounts(minBet: number = 0.10, maxBet: number = 100): number[] {
-  const amounts: number[] = [];
-  let current = minBet;
-  
-  while (current <= maxBet) {
-    amounts.push(roundToTwoDecimals(current));
-    
-    if (current < 2.0) {
-      current += 0.10;
-    } else if (current < 5.0) {
-      current += 0.50;
-    } else if (current < 20.0) {
-      current += 1.0;
-    } else if (current < 50.0) {
-      current += 5.0;
-    } else {
-      current += 10.0;
-    }
-  }
-  
-  return amounts;
+export function generateBetAmounts(minBet: number = 0.1, maxBet: number = 5.0): number[] {
+  return BET_LEVELS.filter(level => level >= minBet && level <= maxBet);
+}
+
+/**
+ * Get all bet levels (exported for use in other components).
+ */
+export function getBetLevels(): number[] {
+  return [...BET_LEVELS];
 }
 

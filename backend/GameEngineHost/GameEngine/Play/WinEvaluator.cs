@@ -7,18 +7,19 @@ namespace GameEngine.Play;
 public sealed class WinEvaluator
 {
     // Starburst 10-line payline definitions
+    // Row indices: 0 = top, 1 = middle, 2 = bottom
     private static readonly IReadOnlyList<IReadOnlyList<int>> Paylines = new[]
     {
-        new[] { 1, 1, 1, 1, 1 }, // Payline 1: Middle row
-        new[] { 0, 0, 0, 0, 0 }, // Payline 2: Top row
-        new[] { 2, 2, 2, 2, 2 }, // Payline 3: Bottom row
-        new[] { 0, 1, 2, 1, 0 }, // Payline 4: V shape
-        new[] { 2, 1, 0, 1, 2 }, // Payline 5: Inverted V
-        new[] { 0, 0, 1, 0, 0 }, // Payline 6: Top-center
-        new[] { 2, 2, 1, 2, 2 }, // Payline 7: Bottom-center
-        new[] { 1, 2, 2, 2, 1 }, // Payline 8: Bottom-heavy
-        new[] { 1, 0, 0, 0, 1 }, // Payline 9: Top-heavy
-        new[] { 1, 0, 1, 0, 1 }  // Payline 10: Alternating
+        new[] { 1, 1, 1, 1, 1 }, // Payline 1: Middle row (straight)
+        new[] { 0, 0, 0, 0, 0 }, // Payline 2: Top row (straight)
+        new[] { 2, 2, 2, 2, 2 }, // Payline 3: Bottom row (straight)
+        new[] { 0, 1, 2, 1, 0 }, // Payline 4: V-shape up
+        new[] { 2, 1, 0, 1, 2 }, // Payline 5: V-shape down (inverted V)
+        new[] { 0, 0, 1, 0, 0 }, // Payline 6: Top-center (top-top-middle-top-top)
+        new[] { 2, 2, 1, 2, 2 }, // Payline 7: Bottom-center (bottom-bottom-middle-bottom-bottom)
+        new[] { 1, 2, 2, 2, 1 }, // Payline 8: Bottom-heavy (middle-bottom-bottom-bottom-middle)
+        new[] { 1, 0, 0, 0, 1 }, // Payline 9: Top-heavy (middle-top-top-top-middle)
+        new[] { 1, 0, 1, 0, 1 }  // Payline 10: Alternating (middle-top-middle-top-middle)
     };
 
     public WinEvaluationResult Evaluate(IReadOnlyList<string> grid, GameConfiguration configuration, Money bet)

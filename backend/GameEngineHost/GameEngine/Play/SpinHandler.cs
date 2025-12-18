@@ -50,10 +50,40 @@ public sealed class SpinHandler
         Console.WriteLine($"[SpinHandler] RoundId created: {roundId}");
         
         var nextState = request.EngineState?.Clone() ?? EngineSessionState.Create();
+        
+        // CRITICAL: Clear respin state if it's invalid or exhausted BEFORE determining spin mode
+        // This prevents stale respin state from incorrectly setting spinMode to Respin
+        if (nextState.Respins is not null)
+        {
+            // Clear if respins are exhausted (feature has ended)
+            if (nextState.Respins.RespinsRemaining <= 0)
+            {
+                Console.WriteLine($"[SpinHandler] Clearing respin state (respins exhausted: {nextState.Respins.RespinsRemaining})");
+                nextState.Respins = null;
+            }
+            // Clear if request.EngineState is null (completely new session)
+            else if (request.EngineState is null)
+            {
+                Console.WriteLine($"[SpinHandler] Clearing respin state (new session, no previous state)");
+                nextState.Respins = null;
+            }
+        }
+        
+        // Determine spin mode AFTER clearing invalid respin state
         var spinMode = request.IsFeatureBuy
             ? SpinMode.BuyEntry
-            : nextState.IsInFreeSpins ? SpinMode.FreeSpins : SpinMode.BaseGame;
-        Console.WriteLine($"[SpinHandler] SpinMode: {spinMode}");
+            : nextState.IsInFreeSpins ? SpinMode.FreeSpins 
+            : nextState.IsInRespinFeature ? SpinMode.Respin
+            : SpinMode.BaseGame;
+        
+        // Additional safety: If we determined BaseGame but respin state still exists, clear it
+        if (spinMode == SpinMode.BaseGame && nextState.Respins is not null)
+        {
+            Console.WriteLine($"[SpinHandler] Clearing stale respin state (determined BaseGame but respin state exists: {nextState.Respins.RespinsRemaining} respins)");
+            nextState.Respins = null;
+        }
+        
+        Console.WriteLine($"[SpinHandler] SpinMode: {spinMode}, RespinsRemaining: {nextState.Respins?.RespinsRemaining ?? 0}, LockedReels: {(nextState.Respins?.LockedWildReels != null && nextState.Respins.LockedWildReels.Count > 0 ? string.Join(",", nextState.Respins.LockedWildReels.Select(r => r + 1)) : "none")}, RequestHadRespinState: {request.EngineState?.Respins != null}");
 
         // Use bet field if provided (per RGS spec), otherwise use TotalBet
         // bet = calculated total bet as sum of all amounts in bets array
@@ -80,123 +110,179 @@ public sealed class SpinHandler
             _fortunaPrng);
         Console.WriteLine("[SpinHandler] Board created");
         
-        // Starburst rule: Only ONE reel (2, 3, or 4) can have wilds per spin
-        // If multiple reels have wilds, randomly select one and remove wilds from others
-        EnforceSingleWildReel(board, configuration, multiplierFactory, _fortunaPrng);
+        // IMPORTANT: Detect wilds from INITIAL board state (before any expansions or cascades)
+        // This ensures we only detect naturally occurring wilds, not ones we expanded
+        var initialWildReels = DetectWildReels(board);
+        if (initialWildReels.Count > 0)
+        {
+            Console.WriteLine($"[SpinHandler] Initial wild reels detected (before expansions): {string.Join(", ", initialWildReels.Select(r => r + 1))}");
+        }
+        else
+        {
+            Console.WriteLine($"[SpinHandler] No initial wild reels detected (before expansions)");
+        }
+        
+        // Starburst: Wilds can appear on reels 2, 3, 4 (indices 1, 2, 3)
+        // Multiple wild reels are allowed - each awards a respin (max 3 respins)
+        // During respins, wild reels are locked and only non-locked reels re-spin
+        
+        // SAFETY CHECK: Only expand wilds if we're actually in respin mode with valid state
+        if (spinMode == SpinMode.Respin && nextState.Respins is not null && nextState.Respins.RespinsRemaining > 0)
+        {
+            // During respin: immediately expand locked wild reels (they don't re-spin)
+            // These were detected and locked in previous spins
+            if (nextState.Respins.LockedWildReels.Count > 0)
+            {
+                LockWildReelsForRespin(board, nextState.Respins.LockedWildReels, configuration, multiplierFactory);
+                Console.WriteLine($"[SpinHandler] Locked {nextState.Respins.LockedWildReels.Count} wild reels during respin: {string.Join(",", nextState.Respins.LockedWildReels.Select(r => r + 1))}");
+            }
+            else
+            {
+                Console.WriteLine($"[SpinHandler] WARNING: Respin mode but no locked reels! This should not happen.");
+            }
+        }
+        else if ((spinMode == SpinMode.BaseGame || spinMode == SpinMode.BuyEntry) && initialWildReels.Count > 0)
+        {
+            // Base game: expand naturally occurring wilds immediately (before cascades)
+            // ONLY expand if we actually detected wilds in the initial board
+            if (configuration.SymbolMap.TryGetValue("WILD", out var wildDef))
+            {
+                foreach (var reelIndex in initialWildReels)
+                {
+                    board.ExpandReelToWild(reelIndex, wildDef, configuration.Board.Rows, multiplierFactory);
+                    Console.WriteLine($"[SpinHandler] Expanded initial wilds on reel {reelIndex + 1} (BaseGame mode)");
+                }
+            }
+        }
+        else if (spinMode == SpinMode.BaseGame && nextState.Respins is not null)
+        {
+            // SAFETY: BaseGame mode but respin state exists - this shouldn't happen after our clearing logic
+            Console.WriteLine($"[SpinHandler] WARNING: BaseGame mode but respin state exists! RespinsRemaining: {nextState.Respins.RespinsRemaining}, LockedReels: {string.Join(",", nextState.Respins.LockedWildReels.Select(r => r + 1))}");
+            // Don't expand any wilds - this is a safety measure
+        }
 
+        // Starburst is NOT a cascading game - it's a simple payline game
+        // Evaluate wins once, pay them, done. No symbol removal, no cascades.
         var cascades = new List<CascadeStep>();
         var wins = new List<SymbolWin>();
-        var cascadeIndex = 0;
         Money totalWin = Money.Zero;
         Money scatterWin = Money.Zero;
         Money featureWin = nextState.FreeSpins?.FeatureWin ?? Money.Zero;
         int freeSpinsAwarded = 0;
-        IReadOnlyList<int>? finalGrid = null;
         var symbolMapper = configuration.SymbolIdMapper;
 
-        const int MAX_CASCADES = 50; // Safety limit to prevent infinite loops
-        
-        while (cascadeIndex < MAX_CASCADES)
+        // Single win evaluation (no cascades)
+        var gridCodes = board.FlattenCodes();
+        Console.WriteLine($"[SpinHandler] Evaluating wins (single evaluation - no cascades)");
+        var evaluation = _winEvaluator.Evaluate(gridCodes, configuration, effectiveBet);
+        Console.WriteLine($"[SpinHandler] Win evaluation complete: {evaluation.SymbolWins.Count} wins, TotalWin={evaluation.TotalWin.Amount}");
+
+        wins.AddRange(evaluation.SymbolWins);
+        var baseWin = evaluation.TotalWin;
+        var finalWin = baseWin;
+        decimal appliedMultiplier = 1m;
+
+        // Apply multipliers if any (from multiplier symbols on the board)
+        var multiplierSum = board.SumMultipliers();
+        if (spinMode == SpinMode.BaseGame || spinMode == SpinMode.BuyEntry)
         {
-            var gridBeforeCodes = board.FlattenCodes();
-            Console.WriteLine($"[SpinHandler] Evaluating wins (cascade {cascadeIndex})");
-            var evaluation = _winEvaluator.Evaluate(gridBeforeCodes, configuration, effectiveBet);
-            Console.WriteLine($"[SpinHandler] Win evaluation complete: {evaluation.SymbolWins.Count} wins, TotalWin={evaluation.TotalWin.Amount}");
-
-            if (evaluation.SymbolWins.Count == 0)
+            if (multiplierSum > 0m && baseWin.Amount > 0)
             {
-                Console.WriteLine($"[SpinHandler] No more wins, breaking cascade loop at cascade {cascadeIndex}");
-                finalGrid = cascades.Count > 0 ? cascades[^1].GridAfter : symbolMapper.CodesToIds(gridBeforeCodes);
-                break;
+                appliedMultiplier = multiplierSum;
+                finalWin = baseWin * multiplierSum;
             }
-            
-            // Safety check: if we've hit max cascades, break
-            if (cascadeIndex >= MAX_CASCADES - 1)
+        }
+        else if (nextState.FreeSpins is not null)
+        {
+            if (multiplierSum > 0m)
             {
-                Console.WriteLine($"[SpinHandler] WARNING: Max cascades ({MAX_CASCADES}) reached, forcing break!");
-                // Use current grid state after refill
-                var finalGridCodes = board.FlattenCodes();
-                finalGrid = symbolMapper.CodesToIds(finalGridCodes);
-                Console.WriteLine($"[SpinHandler] Final grid set from board state: {finalGrid.Count} symbols");
-                break;
+                nextState.FreeSpins.TotalMultiplier += multiplierSum;
             }
 
-            wins.AddRange(evaluation.SymbolWins);
-            var cascadeBaseWin = evaluation.TotalWin;
-            var cascadeFinalWin = cascadeBaseWin;
-            decimal appliedMultiplier = 1m;
-
-            var multiplierSum = board.SumMultipliers();
-            if (spinMode == SpinMode.BaseGame || spinMode == SpinMode.BuyEntry)
+            if (nextState.FreeSpins.TotalMultiplier > 0m && baseWin.Amount > 0)
             {
-                if (multiplierSum > 0m && cascadeBaseWin.Amount > 0)
+                appliedMultiplier = nextState.FreeSpins.TotalMultiplier;
+                finalWin = baseWin * nextState.FreeSpins.TotalMultiplier;
+            }
+        }
+
+        totalWin = finalWin;
+
+        if (spinMode == SpinMode.FreeSpins && nextState.FreeSpins is not null)
+        {
+            featureWin += finalWin;
+            nextState.FreeSpins.FeatureWin = featureWin;
+        }
+
+        // Create a single "cascade" step for compatibility (even though there are no cascades)
+        var finalGrid = symbolMapper.CodesToIds(gridCodes);
+        cascades.Add(new CascadeStep(
+            Index: 0,
+            GridBefore: finalGrid,
+            GridAfter: finalGrid, // Same grid - no changes in Starburst
+            WinsAfterCascade: evaluation.SymbolWins,
+            BaseWin: baseWin,
+            AppliedMultiplier: appliedMultiplier,
+            TotalWin: finalWin));
+        
+        Console.WriteLine($"[SpinHandler] Single evaluation complete: {wins.Count} wins, TotalWin={totalWin.Amount}");
+
+        // After win evaluation: Handle wild/respin feature
+        // For base game: detect and expand initial wilds, then initialize respin feature
+        // For respin mode: detect NEW wilds on non-locked reels, expand them, and award additional respins
+        if (spinMode == SpinMode.BaseGame || spinMode == SpinMode.BuyEntry)
+        {
+            // Base game: use initial wild detection (from before win evaluation)
+            if (initialWildReels.Count > 0)
+            {
+                HandleWildRespinFeature(initialWildReels, nextState, spinMode);
+                if (nextState.Respins is not null && nextState.Respins.RespinsRemaining > 0)
                 {
-                    appliedMultiplier = multiplierSum;
-                    cascadeFinalWin = cascadeBaseWin * multiplierSum;
+                    spinMode = SpinMode.Respin;
+                    Console.WriteLine($"[SpinHandler] Respin feature triggered: {nextState.Respins.RespinsRemaining} respins awarded");
                 }
             }
-            else if (nextState.FreeSpins is not null)
+        }
+        else if (spinMode == SpinMode.Respin && nextState.Respins is not null)
+        {
+            // Respin mode: detect NEW wilds that appeared on non-locked reels
+            // (Locked reels were already expanded before win evaluation)
+            var wildReelsAfterSpin = DetectWildReels(board);
+            // Filter out already-locked reels - only count NEW wilds
+            var newWildReels = wildReelsAfterSpin
+                .Where(r => !nextState.Respins.LockedWildReels.Contains(r) && r >= 1 && r <= 3)
+                .ToList();
+            
+            if (newWildReels.Count > 0)
             {
-                if (multiplierSum > 0m)
+                Console.WriteLine($"[SpinHandler] New wild reels detected during respin: {string.Join(", ", newWildReels.Select(r => r + 1))}");
+                // Expand new wilds that appeared during respin
+                if (configuration.SymbolMap.TryGetValue("WILD", out var wildDef))
                 {
-                    nextState.FreeSpins.TotalMultiplier += multiplierSum;
+                    foreach (var reelIndex in newWildReels)
+                    {
+                        board.ExpandReelToWild(reelIndex, wildDef, configuration.Board.Rows, multiplierFactory);
+                        Console.WriteLine($"[SpinHandler] Expanded new wilds on reel {reelIndex + 1} during respin");
+                    }
                 }
-
-                if (nextState.FreeSpins.TotalMultiplier > 0m && cascadeBaseWin.Amount > 0)
-                {
-                    appliedMultiplier = nextState.FreeSpins.TotalMultiplier;
-                    cascadeFinalWin = cascadeBaseWin * nextState.FreeSpins.TotalMultiplier;
-                }
+                
+                // New wilds appeared - add them to locked reels and award additional respins
+                HandleWildRespinFeature(newWildReels, nextState, spinMode);
             }
-
-            totalWin += cascadeFinalWin;
-
-            if (spinMode == SpinMode.FreeSpins && nextState.FreeSpins is not null)
-            {
-                featureWin += cascadeFinalWin;
-                nextState.FreeSpins.FeatureWin = featureWin;
-            }
-
-            var winningCodes = evaluation.SymbolWins
-                .Select(win => win.SymbolCode)
-                .ToHashSet(StringComparer.Ordinal);
             
-            Console.WriteLine($"[SpinHandler] Removing {winningCodes.Count} winning symbol types: {string.Join(", ", winningCodes)}");
-            var gridBeforeRemove = board.FlattenCodes();
-            var symbolsBeforeCount = gridBeforeRemove.Count(s => winningCodes.Contains(s));
+            // Respin completed - decrement respins
+            nextState.Respins.RespinsRemaining = Math.Max(0, nextState.Respins.RespinsRemaining - 1);
+            nextState.Respins.JustTriggered = false;
             
-            board.RemoveSymbols(winningCodes);
-            board.RemoveMultipliers();
-
-            var gridAfterRemove = board.FlattenCodes();
-            var symbolsAfterCount = gridAfterRemove.Count(s => winningCodes.Contains(s));
-            Console.WriteLine($"[SpinHandler] Symbols removed: {symbolsBeforeCount} -> {symbolsAfterCount} remaining");
-
-            if (board.NeedsRefill)
+            if (nextState.Respins.RespinsRemaining == 0)
             {
-                Console.WriteLine("[SpinHandler] Board needs refill, refilling...");
-                board.Refill();
+                Console.WriteLine($"[SpinHandler] Respin feature ended - all respins exhausted");
+                nextState.Respins = null;
             }
-
-            var gridAfterCodes = board.FlattenCodes();
-            Console.WriteLine($"[SpinHandler] Cascade {cascadeIndex} complete, grid size: {gridAfterCodes.Count}");
-            
-            // Safety check: if grid hasn't changed, break to prevent infinite loop
-            if (gridBeforeCodes.SequenceEqual(gridAfterCodes))
+            else
             {
-                Console.WriteLine($"[SpinHandler] WARNING: Grid unchanged after cascade {cascadeIndex}, breaking to prevent infinite loop!");
-                finalGrid = symbolMapper.CodesToIds(gridAfterCodes);
-                break;
+                Console.WriteLine($"[SpinHandler] Respin feature continues - {nextState.Respins.RespinsRemaining} respins remaining");
             }
-
-            cascades.Add(new CascadeStep(
-                Index: cascadeIndex++,
-                GridBefore: symbolMapper.CodesToIds(gridBeforeCodes),
-                GridAfter: symbolMapper.CodesToIds(gridAfterCodes),
-                WinsAfterCascade: evaluation.SymbolWins,
-                BaseWin: cascadeBaseWin,
-                AppliedMultiplier: appliedMultiplier,
-                TotalWin: cascadeFinalWin));
         }
 
         var scatterOutcome = ResolveScatterOutcome(board, configuration, effectiveBet);
@@ -247,13 +333,10 @@ public sealed class SpinHandler
                 FeatureWin: nextState.FreeSpins.FeatureWin,
                 TriggeredThisSpin: nextState.FreeSpins.JustTriggered);
 
-        // Ensure finalGrid is set if it wasn't set during cascades
-        if (finalGrid == null)
-        {
-            var finalGridCodes = board.FlattenCodes();
-            finalGrid = symbolMapper.CodesToIds(finalGridCodes);
-            Console.WriteLine($"[SpinHandler] Final grid set at end: {finalGrid.Count} symbols");
-        }
+        // Final grid is already set from the single evaluation (no cascades in Starburst)
+        // But update it if wilds were expanded during respin feature handling
+        var finalGridCodes = board.FlattenCodes();
+        finalGrid = symbolMapper.CodesToIds(finalGridCodes);
         
         // Log grid in readable format (5 columns x 3 rows)
         LogGridLayout(finalGrid, configuration, "Final Grid");
@@ -273,6 +356,14 @@ public sealed class SpinHandler
                 Type: "FREESPINS",
                 IsClosure: isClosure,
                 Name: "Free Spins");
+        }
+        else if (nextState.Respins is not null && nextState.Respins.RespinsRemaining > 0)
+        {
+            var isClosure = nextState.Respins.RespinsRemaining == 0 ? 1 : 0;
+            featureOutcome = new FeatureOutcome(
+                Type: "BONUS_GAME",
+                IsClosure: isClosure,
+                Name: "Starburst Wilds");
         }
         else if (request.IsFeatureBuy)
         {
@@ -354,6 +445,7 @@ public sealed class SpinHandler
         {
             SpinMode.FreeSpins => configuration.ReelLibrary.FreeSpins,
             SpinMode.BuyEntry => configuration.ReelLibrary.Buy,
+            SpinMode.Respin => SelectBaseReels(configuration, betMode), // Use base reels for respins
             _ => SelectBaseReels(configuration, betMode)
         };
     }
@@ -552,44 +644,129 @@ public sealed class SpinHandler
     }
 
     /// <summary>
-    /// Enforces Starburst rule: Only ONE reel (2, 3, or 4) can have wilds per spin.
-    /// If multiple reels have wilds, randomly selects one and removes wilds from others.
+    /// Detects wild reels on reels 2, 3, 4 (indices 1, 2, 3).
+    /// Returns list of reel indices that contain wild symbols.
+    /// Only detects reels that ACTUALLY have at least one wild symbol (not already expanded).
     /// </summary>
-    private static void EnforceSingleWildReel(ReelBoard board, GameConfiguration configuration, Func<SymbolDefinition, decimal> multiplierFactory, FortunaPrng prng)
+    private static List<int> DetectWildReels(ReelBoard board)
     {
         const string WILD_CODE = "WILD";
-        var wildReels = new List<int>(); // Reels that have wilds (0-based: 1, 2, 3 = reels 2, 3, 4)
+        var wildReels = new List<int>();
         
-        // Check which reels (2, 3, 4) have wilds
+        // Check which reels (2, 3, 4) have wilds (0-based indices: 1, 2, 3)
         for (int reelIndex = 1; reelIndex <= 3 && reelIndex < board.ColumnCount; reelIndex++)
         {
             var reelSymbols = board.GetReelSymbols(reelIndex);
-            if (reelSymbols.Any(s => s == WILD_CODE))
+            var wildCount = reelSymbols.Count(s => s == WILD_CODE);
+            
+            // Only detect reels that have at least one wild symbol
+            // Note: This will detect both single wilds and already-expanded full wild reels
+            if (wildCount > 0)
             {
                 wildReels.Add(reelIndex);
+                Console.WriteLine($"[SpinHandler] Reel {reelIndex + 1} has {wildCount} wild symbol(s)");
             }
         }
         
-        // If multiple reels have wilds, randomly select one and remove wilds from others
-        if (wildReels.Count > 1)
+        if (wildReels.Count > 0)
         {
-            // Randomly select which reel keeps the wild
-            var selectedReel = wildReels[prng.NextInt32(0, wildReels.Count)];
-            Console.WriteLine($"[SpinHandler] Multiple wild reels detected: {string.Join(", ", wildReels.Select(r => r + 1))}. Selecting reel {selectedReel + 1} to keep wild.");
+            Console.WriteLine($"[SpinHandler] Wild reels detected: {string.Join(", ", wildReels.Select(r => r + 1))}");
+        }
+        else
+        {
+            Console.WriteLine($"[SpinHandler] No wild reels detected on reels 2, 3, 4");
+        }
+        
+        return wildReels;
+    }
+
+    /// <summary>
+    /// Handles Starburst Wild Respin feature:
+    /// - Wilds on reels 2, 3, 4 expand and lock
+    /// - Each wild reel awards one respin (max 3 respins total)
+    /// - New wilds during respins also expand and award additional respins
+    /// </summary>
+    private static void HandleWildRespinFeature(List<int> wildReels, EngineSessionState state, SpinMode currentMode)
+    {
+        const int MAX_RESPINS = 3;
+        
+        if (state.Respins is null)
+        {
+            // Initialize respin feature
+            var newLockedReels = new HashSet<int>(wildReels);
+            var respinsAwarded = Math.Min(wildReels.Count, MAX_RESPINS);
             
-            // Remove wilds from other reels
-            foreach (var reelIndex in wildReels)
+            state.Respins = new RespinState
             {
-                if (reelIndex != selectedReel)
+                RespinsRemaining = respinsAwarded,
+                LockedWildReels = newLockedReels,
+                TotalRespinsAwarded = respinsAwarded,
+                JustTriggered = true
+            };
+            
+            Console.WriteLine($"[SpinHandler] Respin feature triggered: {respinsAwarded} respins awarded, locked reels: {string.Join(", ", newLockedReels.Select(r => r + 1))}");
+        }
+        else
+        {
+            // Already in respin feature - check for new wild reels
+            var existingLocked = state.Respins.LockedWildReels;
+            var newWildReels = wildReels.Where(r => !existingLocked.Contains(r)).ToList();
+            
+            if (newWildReels.Count > 0)
+            {
+                // New wild reels found - add them to locked reels and award additional respins
+                var totalLocked = existingLocked.Count + newWildReels.Count;
+                var maxPossibleRespins = Math.Min(totalLocked, MAX_RESPINS);
+                var currentRespins = state.Respins.RespinsRemaining;
+                
+                // Award additional respins, but don't exceed max of 3 total
+                var additionalRespins = Math.Min(newWildReels.Count, maxPossibleRespins - currentRespins);
+                if (additionalRespins > 0)
                 {
-                    board.ReplaceWildsWithRandomSymbol(reelIndex, WILD_CODE, configuration, prng, multiplierFactory);
-                    Console.WriteLine($"[SpinHandler] Removed wilds from reel {reelIndex + 1}");
+                    state.Respins.RespinsRemaining = Math.Min(MAX_RESPINS, currentRespins + additionalRespins);
+                    state.Respins.TotalRespinsAwarded += additionalRespins;
+                    
+                    // Add new reels to locked set
+                    var updatedLocked = new HashSet<int>(existingLocked);
+                    foreach (var reel in newWildReels)
+                    {
+                        updatedLocked.Add(reel);
+                    }
+                    state.Respins.LockedWildReels = updatedLocked;
+                    
+                    Console.WriteLine($"[SpinHandler] New wild reels during respin: {string.Join(", ", newWildReels.Select(r => r + 1))}, additional respins: {additionalRespins}, total locked: {updatedLocked.Count}");
                 }
             }
         }
-        else if (wildReels.Count == 1)
+    }
+
+    /// <summary>
+    /// Locks wild reels during respin by expanding wilds to cover entire reel.
+    /// Only non-locked reels will re-spin.
+    /// Starburst rule: Wilds can ONLY appear on reels 2, 3, 4 (indices 1, 2, 3).
+    /// </summary>
+    private static void LockWildReelsForRespin(ReelBoard board, IReadOnlySet<int> lockedReels, GameConfiguration configuration, Func<SymbolDefinition, decimal> multiplierFactory)
+    {
+        const string WILD_CODE = "WILD";
+        
+        if (!configuration.SymbolMap.TryGetValue(WILD_CODE, out var wildDef))
         {
-            Console.WriteLine($"[SpinHandler] Single wild reel detected: reel {wildReels[0] + 1}");
+            return;
+        }
+        
+        foreach (var reelIndex in lockedReels)
+        {
+            // Starburst rule: Wilds can ONLY appear on reels 2, 3, 4 (indices 1, 2, 3)
+            // Never expand wilds on reel 1 (index 0) or reel 5 (index 4)
+            if (reelIndex < 1 || reelIndex > 3 || reelIndex >= board.ColumnCount)
+            {
+                Console.WriteLine($"[SpinHandler] WARNING: Attempted to lock wild on invalid reel {reelIndex + 1} (must be reels 2-4). Skipping.");
+                continue;
+            }
+            
+            // Expand wilds to cover entire reel (all 3 rows)
+            board.ExpandReelToWild(reelIndex, wildDef, configuration.Board.Rows, multiplierFactory);
+            Console.WriteLine($"[SpinHandler] Locked reel {reelIndex + 1} with expanded wilds");
         }
     }
 
@@ -772,6 +949,31 @@ public sealed class SpinHandler
             }
         }
 
+        /// <summary>
+        /// Removes symbols but preserves WILDs on locked reels during respins.
+        /// Used to ensure locked wild reels stay as wilds during cascades.
+        /// </summary>
+        public void RemoveSymbolsExceptLockedWilds(ISet<string> targets, IReadOnlySet<int> lockedReels)
+        {
+            for (int reelIndex = 0; reelIndex < _columns.Count; reelIndex++)
+            {
+                var column = _columns[reelIndex];
+                bool isLockedReel = lockedReels.Contains(reelIndex);
+                
+                if (isLockedReel && targets.Contains("WILD"))
+                {
+                    // On locked reels, only remove non-WILD symbols
+                    // Preserve WILDs on locked reels
+                    column.RemoveWhere(symbol => targets.Contains(symbol.Definition.Code) && symbol.Definition.Code != "WILD");
+                }
+                else
+                {
+                    // On non-locked reels, remove all target symbols (including WILDs)
+                    column.RemoveWhere(symbol => targets.Contains(symbol.Definition.Code));
+                }
+            }
+        }
+
         public void RemoveMultipliers()
         {
             foreach (var column in _columns)
@@ -796,6 +998,35 @@ public sealed class SpinHandler
                 symbols.Add(column[row].Definition.Code);
             }
             return symbols;
+        }
+
+        /// <summary>
+        /// Expands a reel to be fully wild (used during respins to lock wild reels).
+        /// Starburst rule: Wilds can ONLY appear on reels 2, 3, 4 (indices 1, 2, 3).
+        /// </summary>
+        public void ExpandReelToWild(int reelIndex, SymbolDefinition wildDef, int rows, Func<SymbolDefinition, decimal> multiplierFactory)
+        {
+            // Starburst rule: Wilds can ONLY appear on reels 2, 3, 4 (indices 1, 2, 3)
+            // Never expand wilds on reel 1 (index 0) or reel 5 (index 4)
+            if (reelIndex < 1 || reelIndex > 3 || reelIndex >= _columns.Count)
+            {
+                Console.WriteLine($"[ReelBoard] WARNING: Attempted to expand wild on invalid reel {reelIndex + 1} (must be reels 2-4). Skipping.");
+                return;
+            }
+
+            var column = _columns[reelIndex];
+            // Ensure we have enough symbols
+            while (column.Symbols.Count < rows)
+            {
+                column.Refill(rows);
+            }
+            
+            // Replace all symbols in this reel with wilds
+            for (int row = 0; row < rows && row < column.Symbols.Count; row++)
+            {
+                var multiplier = multiplierFactory(wildDef);
+                column.Symbols[row] = new SymbolInstance(wildDef, multiplier);
+            }
         }
 
         public void ReplaceWildsWithRandomSymbol(int reelIndex, string wildCode, GameConfiguration configuration, FortunaPrng prng, Func<SymbolDefinition, decimal> multiplierFactory)

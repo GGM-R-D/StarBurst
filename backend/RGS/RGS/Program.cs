@@ -73,7 +73,9 @@ app.MapPost("/{operatorId}/{gameId}/start",
                 return Results.BadRequest("token is required when funMode=0.");
             }
 
-            var session = sessions.CreateSession(operatorId, gameId, request.Token ?? string.Empty, funMode);
+            // Create session with initial balance (default 10000, or from player service in production)
+            var initialBalance = 10000m; // TODO: Get from player service using request.Token
+            var session = sessions.CreateSession(operatorId, gameId, request.Token ?? string.Empty, funMode, initialBalance);
             var timestamp = timeService.UtcNow;
 
             // Internal response for tracking
@@ -87,14 +89,12 @@ app.MapPost("/{operatorId}/{gameId}/start",
                 ThemeId: gameId);
 
             // Transform to client-compliant response
-            // TODO: Get actual player balance, currency, and client info from player service/database
-            // For now, using defaults/demo values
             var clientIp = httpContext.Connection.RemoteIpAddress?.ToString() ?? "127.0.0.1";
             var playerId = request.Token ?? "DEMO_PLAYER";
             var clientResponse = ResponseTransformer.ToClientStartResponse(
                 internalResponse: internalResponse,
                 playerId: playerId,
-                balance: 10000m, // TODO: Get from player service
+                balance: session.Balance, // Use session balance
                 clientType: request.Client ?? "desktop",
                 clientIp: clientIp,
                 countryCode: "US", // TODO: Get from geo-location
@@ -189,12 +189,20 @@ app.MapPost("/{operatorId}/{gameId}/play",
             var engineResponse = await engineClient.PlayAsync(engineRequest, cancellationToken);
             sessions.UpdateState(session.SessionId, engineResponse.NextState);
 
-            // TODO: Calculate actual balance changes from player service
-            // For now, using demo values
-            var prevBalance = 10000m; // TODO: Get from player service
-            var balance = prevBalance - totalBet.Amount + engineResponse.Win.Amount; // TODO: Update via player service
+            // Get current balance from session (before update)
+            var prevBalance = session.Balance;
+            
+            // Update balance: deduct bet, add win
+            sessions.UpdateBalance(session.SessionId, totalBet.Amount, engineResponse.Win.Amount);
+            
+            // Get updated balance (session reference is updated since SessionRecord is a class)
+            var balance = session.Balance;
+            
             var maxWinCap = 0m; // TODO: Get from game configuration
             var currencyId = "USD"; // TODO: Get from session/player
+            
+            logger.LogInformation("Balance updated: PrevBalance={PrevBalance}, Bet={Bet}, Win={Win}, NewBalance={NewBalance}", 
+                prevBalance, totalBet.Amount, engineResponse.Win.Amount, balance);
 
             // Transform engine response to client-compliant format
             var clientResponse = ResponseTransformer.ToClientPlayResponse(
@@ -284,10 +292,17 @@ app.MapPost("/{gameId}/buy-free-spins",
 
             var engineResponse = await engineClient.PlayAsync(engineRequest, cancellationToken);
             sessions.UpdateState(session.SessionId, engineResponse.NextState);
+            
+            // Update balance: deduct buy cost, add win
             if (engineResponse.BuyCost.Amount > 0)
             {
-                logger.LogInformation("Buy feature charged {Amount}", engineResponse.BuyCost.Amount);
+                var prevBalance = session.Balance;
+                sessions.UpdateBalance(session.SessionId, engineResponse.BuyCost.Amount, engineResponse.Win.Amount);
+                var newBalance = sessions.GetBalance(session.SessionId);
+                logger.LogInformation("Buy feature: PrevBalance={PrevBalance}, BuyCost={BuyCost}, Win={Win}, NewBalance={NewBalance}", 
+                    prevBalance, engineResponse.BuyCost.Amount, engineResponse.Win.Amount, newBalance);
             }
+            
             return Results.Ok(engineResponse);
         })
     .WithName("BuyFreeSpins");
