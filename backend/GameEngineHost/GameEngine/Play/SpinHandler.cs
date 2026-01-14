@@ -126,10 +126,10 @@ public sealed class SpinHandler
         // Multiple wild reels are allowed - each awards a respin (max 3 respins)
         // During respins, wild reels are locked and only non-locked reels re-spin
         
-        // SAFETY CHECK: Only expand wilds if we're actually in respin mode with valid state
+        // Handle wild expansion based on spin mode
         if (spinMode == SpinMode.Respin && nextState.Respins is not null && nextState.Respins.RespinsRemaining > 0)
         {
-            // During respin: immediately expand locked wild reels (they don't re-spin)
+            // STEP 1: During respin - expand previously locked wild reels (they don't re-spin)
             // These were detected and locked in previous spins
             if (nextState.Respins.LockedWildReels.Count > 0)
             {
@@ -140,10 +140,34 @@ public sealed class SpinHandler
             {
                 Console.WriteLine($"[SpinHandler] WARNING: Respin mode but no locked reels! This should not happen.");
             }
+            
+            // STEP 2: Detect NEW wilds that appeared on non-locked reels during this respin
+            // (The board was just created with only non-locked reels spinning)
+            var wildReelsAfterSpin = DetectWildReels(board);
+            var newWildReels = wildReelsAfterSpin
+                .Where(r => !nextState.Respins.LockedWildReels.Contains(r) && r >= 1 && r <= 3)
+                .ToList();
+            
+            // STEP 3: Expand new wilds immediately (BEFORE win evaluation so they can substitute)
+            if (newWildReels.Count > 0)
+            {
+                Console.WriteLine($"[SpinHandler] New wild reels detected during respin: {string.Join(", ", newWildReels.Select(r => r + 1))}");
+                if (configuration.SymbolMap.TryGetValue("WILD", out var wildDef))
+                {
+                    foreach (var reelIndex in newWildReels)
+                    {
+                        board.ExpandReelToWild(reelIndex, wildDef, configuration.Board.Rows, multiplierFactory);
+                        Console.WriteLine($"[SpinHandler] Expanded new wilds on reel {reelIndex + 1} during respin (before win evaluation)");
+                    }
+                }
+                
+                // Award additional respins for new wilds (will be processed after win evaluation)
+                HandleWildRespinFeature(newWildReels, nextState, spinMode);
+            }
         }
         else if ((spinMode == SpinMode.BaseGame || spinMode == SpinMode.BuyEntry) && initialWildReels.Count > 0)
         {
-            // Base game: expand naturally occurring wilds immediately (before cascades)
+            // Base game: expand naturally occurring wilds immediately (before win evaluation)
             // ONLY expand if we actually detected wilds in the initial board
             if (configuration.SymbolMap.TryGetValue("WILD", out var wildDef))
             {
@@ -172,6 +196,7 @@ public sealed class SpinHandler
         var symbolMapper = configuration.SymbolIdMapper;
 
         // Single win evaluation (no cascades)
+        // IMPORTANT: All wild expansions have already happened above, so board state is final
         var gridCodes = board.FlattenCodes();
         Console.WriteLine($"[SpinHandler] Evaluating wins (single evaluation - no cascades)");
         var evaluation = _winEvaluator.Evaluate(gridCodes, configuration, effectiveBet);
@@ -215,6 +240,7 @@ public sealed class SpinHandler
         }
 
         // Create a single "cascade" step for compatibility (even though there are no cascades)
+        // Grid is final after all wild expansions
         var finalGrid = symbolMapper.CodesToIds(gridCodes);
         cascades.Add(new CascadeStep(
             Index: 0,
@@ -227,12 +253,11 @@ public sealed class SpinHandler
         
         Console.WriteLine($"[SpinHandler] Single evaluation complete: {wins.Count} wins, TotalWin={totalWin.Amount}");
 
-        // After win evaluation: Handle wild/respin feature
-        // For base game: detect and expand initial wilds, then initialize respin feature
-        // For respin mode: detect NEW wilds on non-locked reels, expand them, and award additional respins
+        // After win evaluation: Handle wild/respin feature state management
+        // Note: Wild expansion already happened BEFORE win evaluation above
         if (spinMode == SpinMode.BaseGame || spinMode == SpinMode.BuyEntry)
         {
-            // Base game: use initial wild detection (from before win evaluation)
+            // Base game: initialize respin feature if wilds were detected
             if (initialWildReels.Count > 0)
             {
                 HandleWildRespinFeature(initialWildReels, nextState, spinMode);
@@ -245,38 +270,17 @@ public sealed class SpinHandler
         }
         else if (spinMode == SpinMode.Respin && nextState.Respins is not null)
         {
-            // Respin mode: detect NEW wilds that appeared on non-locked reels
-            // (Locked reels were already expanded before win evaluation)
-            var wildReelsAfterSpin = DetectWildReels(board);
-            // Filter out already-locked reels - only count NEW wilds
-            var newWildReels = wildReelsAfterSpin
-                .Where(r => !nextState.Respins.LockedWildReels.Contains(r) && r >= 1 && r <= 3)
-                .ToList();
+            // Respin mode: New wilds were already detected and expanded BEFORE win evaluation
+            // Now we just need to manage the respin state
             
-            if (newWildReels.Count > 0)
-            {
-                Console.WriteLine($"[SpinHandler] New wild reels detected during respin: {string.Join(", ", newWildReels.Select(r => r + 1))}");
-                // Expand new wilds that appeared during respin
-                if (configuration.SymbolMap.TryGetValue("WILD", out var wildDef))
-                {
-                    foreach (var reelIndex in newWildReels)
-                    {
-                        board.ExpandReelToWild(reelIndex, wildDef, configuration.Board.Rows, multiplierFactory);
-                        Console.WriteLine($"[SpinHandler] Expanded new wilds on reel {reelIndex + 1} during respin");
-                    }
-                }
-                
-                // New wilds appeared - add them to locked reels and award additional respins
-                HandleWildRespinFeature(newWildReels, nextState, spinMode);
-            }
-            
-            // Respin completed - decrement respins
+            // This respin is complete - decrement respin count
             nextState.Respins.RespinsRemaining = Math.Max(0, nextState.Respins.RespinsRemaining - 1);
             nextState.Respins.JustTriggered = false;
             
+            // Clear respin state if all respins are exhausted (next spin will be paid base game)
             if (nextState.Respins.RespinsRemaining == 0)
             {
-                Console.WriteLine($"[SpinHandler] Respin feature ended - all respins exhausted");
+                Console.WriteLine($"[SpinHandler] Respin feature ended - all respins exhausted. Next spin will be paid base game.");
                 nextState.Respins = null;
             }
             else
@@ -334,7 +338,8 @@ public sealed class SpinHandler
                 TriggeredThisSpin: nextState.FreeSpins.JustTriggered);
 
         // Final grid is already set from the single evaluation (no cascades in Starburst)
-        // But update it if wilds were expanded during respin feature handling
+        // All wild expansions happened before win evaluation, so gridCodes already has final state
+        // Just verify and log the final grid
         var finalGridCodes = board.FlattenCodes();
         finalGrid = symbolMapper.CodesToIds(finalGridCodes);
         
