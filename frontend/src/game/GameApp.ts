@@ -79,6 +79,8 @@ export class GameApp extends GameStateMachine {
   private currentBackendTotalWin?: number;
   // Initial grid before wild expansion (for detecting new wilds)
   private currentInitialGrid?: SymbolId[][];
+  // Current response from backend (for checking respin state)
+  private currentResponse?: PlayResponse;
 
   constructor(app: Application) {
     super();
@@ -1146,6 +1148,14 @@ export class GameApp extends GameStateMachine {
       this.bottomBar.setBalance(this.balance);
     }
 
+    // Only check if backend says feature ended - clear state if so
+    // Otherwise, let the frontend calculate respin state based on wild detection
+    if (response.feature?.isClosure === 1 && response.feature?.type === "BONUS_GAME") {
+      console.info('[GameApp] Backend indicates respin feature ended (IsClosure=1), clearing frontend state');
+      this.inRespinFeature = false;
+      this.pendingRespins = 0;
+    }
+
     // Extract grid and wins from RGS response
     if (!response.game?.results) {
       throw new Error('No results in RGS response');
@@ -1230,6 +1240,8 @@ export class GameApp extends GameStateMachine {
 
     // Store initial grid for wild detection (before expansion)
     this.currentInitialGrid = initialGridForWildDetection;
+    // Store response for checking respin state in onSpinAnimationComplete
+    this.currentResponse = response;
 
     // Create a promise that resolves when animation completes and processing is done
     let animationCompleteResolve: (value: PlayResponse) => void;

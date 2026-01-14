@@ -70,9 +70,9 @@ public sealed class SpinHandler
         }
         
         // Determine spin mode AFTER clearing invalid respin state
+        // Note: No free spins feature in Starburst (only wild/respin feature)
         var spinMode = request.IsFeatureBuy
             ? SpinMode.BuyEntry
-            : nextState.IsInFreeSpins ? SpinMode.FreeSpins 
             : nextState.IsInRespinFeature ? SpinMode.Respin
             : SpinMode.BaseGame;
         
@@ -99,7 +99,7 @@ public sealed class SpinHandler
         var randomContext = await FetchRandomContext(configuration, reelStrips, request, roundId, spinMode, cancellationToken);
         Console.WriteLine("[SpinHandler] Random context fetched");
         var multiplierFactory = new Func<SymbolDefinition, decimal>(symbol =>
-            AssignMultiplierValue(symbol, configuration, request.BetMode, spinMode, nextState.FreeSpins, randomContext));
+            AssignMultiplierValue(symbol, configuration, request.BetMode, spinMode, null, randomContext));
 
         var board = ReelBoard.Create(
             reelStrips,
@@ -187,12 +187,13 @@ public sealed class SpinHandler
 
         // Starburst is NOT a cascading game - it's a simple payline game
         // Evaluate wins once, pay them, done. No symbol removal, no cascades.
+        // Note: No scatter symbols or free spins feature in Starburst
         var cascades = new List<CascadeStep>();
         var wins = new List<SymbolWin>();
         Money totalWin = Money.Zero;
-        Money scatterWin = Money.Zero;
-        Money featureWin = nextState.FreeSpins?.FeatureWin ?? Money.Zero;
-        int freeSpinsAwarded = 0;
+        Money scatterWin = Money.Zero; // Always zero - no scatter symbols
+        Money featureWin = Money.Zero; // No free spins feature
+        int freeSpinsAwarded = 0; // Always zero - no free spins
         var symbolMapper = configuration.SymbolIdMapper;
 
         // Single win evaluation (no cascades)
@@ -208,6 +209,7 @@ public sealed class SpinHandler
         decimal appliedMultiplier = 1m;
 
         // Apply multipliers if any (from multiplier symbols on the board)
+        // Note: No free spins feature, so multipliers only apply in base game/buy entry
         var multiplierSum = board.SumMultipliers();
         if (spinMode == SpinMode.BaseGame || spinMode == SpinMode.BuyEntry)
         {
@@ -217,27 +219,8 @@ public sealed class SpinHandler
                 finalWin = baseWin * multiplierSum;
             }
         }
-        else if (nextState.FreeSpins is not null)
-        {
-            if (multiplierSum > 0m)
-            {
-                nextState.FreeSpins.TotalMultiplier += multiplierSum;
-            }
-
-            if (nextState.FreeSpins.TotalMultiplier > 0m && baseWin.Amount > 0)
-            {
-                appliedMultiplier = nextState.FreeSpins.TotalMultiplier;
-                finalWin = baseWin * nextState.FreeSpins.TotalMultiplier;
-            }
-        }
 
         totalWin = finalWin;
-
-        if (spinMode == SpinMode.FreeSpins && nextState.FreeSpins is not null)
-        {
-            featureWin += finalWin;
-            nextState.FreeSpins.FeatureWin = featureWin;
-        }
 
         // Create a single "cascade" step for compatibility (even though there are no cascades)
         // Grid is final after all wild expansions
@@ -255,16 +238,20 @@ public sealed class SpinHandler
 
         // After win evaluation: Handle wild/respin feature state management
         // Note: Wild expansion already happened BEFORE win evaluation above
+        // Note: No scatter symbols or free spins in Starburst - only wild/respin feature
         if (spinMode == SpinMode.BaseGame || spinMode == SpinMode.BuyEntry)
         {
             // Base game: initialize respin feature if wilds were detected
+            // IMPORTANT: The current base game spin is NOT a respin - it's the triggering spin
+            // Respins will happen on subsequent requests
             if (initialWildReels.Count > 0)
             {
                 HandleWildRespinFeature(initialWildReels, nextState, spinMode);
+                // Don't change spinMode here - the current spin is still base game
+                // The respin mode will be determined on the NEXT request based on nextState
                 if (nextState.Respins is not null && nextState.Respins.RespinsRemaining > 0)
                 {
-                    spinMode = SpinMode.Respin;
-                    Console.WriteLine($"[SpinHandler] Respin feature triggered: {nextState.Respins.RespinsRemaining} respins awarded");
+                    Console.WriteLine($"[SpinHandler] Respin feature triggered: {nextState.Respins.RespinsRemaining} respins will be awarded on next request(s)");
                 }
             }
         }
@@ -273,9 +260,13 @@ public sealed class SpinHandler
             // Respin mode: New wilds were already detected and expanded BEFORE win evaluation
             // Now we just need to manage the respin state
             
+            var respinsBeforeDecrement = nextState.Respins.RespinsRemaining;
+            
             // This respin is complete - decrement respin count
             nextState.Respins.RespinsRemaining = Math.Max(0, nextState.Respins.RespinsRemaining - 1);
             nextState.Respins.JustTriggered = false;
+            
+            Console.WriteLine($"[SpinHandler] Respin completed: RespinsRemaining {respinsBeforeDecrement} -> {nextState.Respins.RespinsRemaining}");
             
             // Clear respin state if all respins are exhausted (next spin will be paid base game)
             if (nextState.Respins.RespinsRemaining == 0)
@@ -285,41 +276,7 @@ public sealed class SpinHandler
             }
             else
             {
-                Console.WriteLine($"[SpinHandler] Respin feature continues - {nextState.Respins.RespinsRemaining} respins remaining");
-            }
-        }
-
-        var scatterOutcome = ResolveScatterOutcome(board, configuration, effectiveBet);
-        if (scatterOutcome is not null)
-        {
-            scatterWin = scatterOutcome.Win;
-            totalWin += scatterWin;
-
-            if ((spinMode == SpinMode.BaseGame || spinMode == SpinMode.BuyEntry) && scatterOutcome.FreeSpinsAwarded > 0)
-            {
-                InitializeFreeSpins(configuration, nextState);
-                spinMode = SpinMode.FreeSpins;
-                freeSpinsAwarded = scatterOutcome.FreeSpinsAwarded;
-            }
-            else if (spinMode == SpinMode.FreeSpins && nextState.FreeSpins is not null)
-            {
-                if (scatterOutcome.SymbolCount >= configuration.FreeSpins.RetriggerScatterCount)
-                {
-                    nextState.FreeSpins.SpinsRemaining += configuration.FreeSpins.RetriggerSpins;
-                    nextState.FreeSpins.TotalSpinsAwarded += configuration.FreeSpins.RetriggerSpins;
-                    freeSpinsAwarded = configuration.FreeSpins.RetriggerSpins;
-                }
-            }
-        }
-
-        if (spinMode == SpinMode.FreeSpins && nextState.FreeSpins is not null)
-        {
-            nextState.FreeSpins.SpinsRemaining = Math.Max(0, nextState.FreeSpins.SpinsRemaining - 1);
-            nextState.FreeSpins.JustTriggered = false;
-
-            if (nextState.FreeSpins.SpinsRemaining == 0)
-            {
-                nextState.FreeSpins = null;
+                Console.WriteLine($"[SpinHandler] Respin feature continues - {nextState.Respins.RespinsRemaining} respin(s) remaining");
             }
         }
 
@@ -329,13 +286,8 @@ public sealed class SpinHandler
             totalWin = maxWin;
         }
 
-        var featureSummary = nextState.FreeSpins is null
-            ? null
-            : new FeatureSummary(
-                SpinsRemaining: nextState.FreeSpins.SpinsRemaining,
-                TotalMultiplier: nextState.FreeSpins.TotalMultiplier,
-                FeatureWin: nextState.FreeSpins.FeatureWin,
-                TriggeredThisSpin: nextState.FreeSpins.JustTriggered);
+        // No free spins feature in Starburst - featureSummary is always null
+        FeatureSummary? featureSummary = null;
 
         // Final grid is already set from the single evaluation (no cascades in Starburst)
         // All wild expansions happened before win evaluation, so gridCodes already has final state
@@ -348,21 +300,15 @@ public sealed class SpinHandler
         
         Console.WriteLine($"[SpinHandler] Final grid ready: {finalGrid.Count} symbols");
 
-        // Determine game mode: 0=normal, 1=free spin, 2=bonus game, 3=free bets
+        // Determine game mode: 0=normal, 2=bonus game (respin feature), 3=free bets
+        // Note: No free spins (mode 1) in Starburst
         // Use request.Mode if provided, otherwise infer from engine state
-        var gameMode = request.Mode ?? (nextState.IsInFreeSpins ? 1 : 0);
+        var gameMode = request.Mode ?? (nextState.IsInRespinFeature ? 2 : 0);
         
         // Determine feature outcome if feature is active
+        // Note: Only respin feature exists in Starburst (no free spins)
         FeatureOutcome? featureOutcome = null;
-        if (nextState.FreeSpins is not null)
-        {
-            var isClosure = nextState.FreeSpins.SpinsRemaining == 0 ? 1 : 0;
-            featureOutcome = new FeatureOutcome(
-                Type: "FREESPINS",
-                IsClosure: isClosure,
-                Name: "Free Spins");
-        }
-        else if (nextState.Respins is not null && nextState.Respins.RespinsRemaining > 0)
+        if (nextState.Respins is not null && nextState.Respins.RespinsRemaining > 0)
         {
             var isClosure = nextState.Respins.RespinsRemaining == 0 ? 1 : 0;
             featureOutcome = new FeatureOutcome(
@@ -383,7 +329,7 @@ public sealed class SpinHandler
         var response = new PlayResponse(
             StatusCode: 200,
             Win: totalWin,
-            ScatterWin: scatterWin,
+            ScatterWin: Money.Zero, // No scatter symbols in Starburst
             FeatureWin: featureSummary?.FeatureWin ?? Money.Zero,
             BuyCost: buyCost,
             FreeSpinsAwarded: freeSpinsAwarded,
@@ -393,8 +339,8 @@ public sealed class SpinHandler
             Results: new ResultsEnvelope(
                 Cascades: cascades,
                 Wins: wins,
-                Scatter: scatterOutcome,
-                FreeSpins: featureSummary,
+                Scatter: null, // No scatter symbols in Starburst
+                FreeSpins: null, // No free spins feature in Starburst
                 RngTransactionId: roundId,
                 FinalGridSymbols: finalGrid),
             Message: "Request processed successfully",
@@ -406,12 +352,12 @@ public sealed class SpinHandler
             SpinMode: spinMode,
             TotalBet: request.TotalBet.Amount + buyCost.Amount,
             TotalWin: totalWin.Amount,
-            ScatterWin: scatterWin.Amount,
+            ScatterWin: 0m, // No scatter symbols in Starburst
             FeatureWin: featureSummary?.FeatureWin.Amount ?? 0m,
             BuyCost: buyCost.Amount,
             Cascades: cascades.Count,
-            TriggeredFreeSpins: freeSpinsAwarded > 0,
-            FreeSpinMultiplier: nextState.FreeSpins?.TotalMultiplier ?? 0m,
+            TriggeredFreeSpins: false, // No free spins feature in Starburst
+            FreeSpinMultiplier: 0m, // No free spins feature in Starburst
             Timestamp: response.Timestamp));
 
         Console.WriteLine($"[SpinHandler] PlayAsync completed successfully: RoundId={roundId}, Win={totalWin.Amount}");
@@ -446,19 +392,19 @@ public sealed class SpinHandler
         SpinMode mode,
         BetMode betMode)
     {
+        // Note: No free spins feature in Starburst - only base game, buy entry, and respin
         return mode switch
         {
-            SpinMode.FreeSpins => configuration.ReelLibrary.FreeSpins,
             SpinMode.BuyEntry => configuration.ReelLibrary.Buy,
-            SpinMode.Respin => SelectBaseReels(configuration, betMode), // Use base reels for respins
-            _ => SelectBaseReels(configuration, betMode)
+            SpinMode.Respin => SelectBaseReels(configuration), // Use base reels for respins
+            _ => SelectBaseReels(configuration) // Base game - always use standard bet mode
         };
     }
 
-    private IReadOnlyList<IReadOnlyList<string>> SelectBaseReels(GameConfiguration configuration, BetMode betMode)
+    private IReadOnlyList<IReadOnlyList<string>> SelectBaseReels(GameConfiguration configuration)
     {
-        var key = betMode == BetMode.Ante ? "ante" : "standard";
-        if (!configuration.BetModes.TryGetValue(key, out var modeDefinition))
+        // Note: No ante bet mode in Starburst - only standard bet mode
+        if (!configuration.BetModes.TryGetValue("standard", out var modeDefinition))
         {
             return configuration.ReelLibrary.High;
         }
@@ -561,23 +507,14 @@ public sealed class SpinHandler
         FreeSpinState? freeSpinState,
         RandomContext randomContext)
     {
+        // Note: No ante bet mode or free spins in Starburst - only standard bet mode
         if (definition.Type != SymbolType.Multiplier)
         {
             return 0m;
         }
 
-        IReadOnlyList<MultiplierWeight> profile = configuration.MultiplierProfiles.Standard;
-
-        if (spinMode == SpinMode.FreeSpins && freeSpinState is not null)
-        {
-            profile = freeSpinState.TotalMultiplier >= configuration.MultiplierProfiles.FreeSpinsSwitchThreshold
-                ? configuration.MultiplierProfiles.FreeSpinsLow
-                : configuration.MultiplierProfiles.FreeSpinsHigh;
-        }
-        else if (betMode == BetMode.Ante)
-        {
-            profile = configuration.MultiplierProfiles.Ante;
-        }
+        // Always use standard multiplier profile (no ante bet, no free spins)
+        var profile = configuration.MultiplierProfiles.Standard;
 
         var seed = randomContext.TryDequeueMultiplierSeed(out var rngSeed)
             ? rngSeed
@@ -608,39 +545,7 @@ public sealed class SpinHandler
         return weights[^1].Value;
     }
 
-    private static ScatterOutcome? ResolveScatterOutcome(ReelBoard board, GameConfiguration configuration, Money bet)
-    {
-        var scatterCount = board.CountSymbols(symbol => symbol.Type == SymbolType.Scatter);
-        if (scatterCount == 0)
-        {
-            return null;
-        }
-
-        var reward = configuration.Scatter.Rewards
-            .Where(r => scatterCount >= r.Count)
-            .OrderByDescending(r => r.Count)
-            .FirstOrDefault();
-
-        if (reward is null)
-        {
-            return null;
-        }
-
-        var win = Money.FromBet(bet.Amount, reward.PayoutMultiplier);
-        return new ScatterOutcome(scatterCount, win, reward.FreeSpinsAwarded);
-    }
-
-    private static void InitializeFreeSpins(GameConfiguration configuration, EngineSessionState state)
-    {
-        state.FreeSpins = new FreeSpinState
-        {
-            SpinsRemaining = configuration.FreeSpins.InitialSpins,
-            TotalSpinsAwarded = configuration.FreeSpins.InitialSpins,
-            TotalMultiplier = 0,
-            FeatureWin = Money.Zero,
-            JustTriggered = true
-        };
-    }
+    // Note: Scatter symbols and free spins feature removed - not part of Starburst game
 
     private string CreateRoundId()
     {
@@ -698,8 +603,11 @@ public sealed class SpinHandler
         if (state.Respins is null)
         {
             // Initialize respin feature
+            // IMPORTANT: Each wild reel awards exactly 1 respin (max 3 total)
             var newLockedReels = new HashSet<int>(wildReels);
             var respinsAwarded = Math.Min(wildReels.Count, MAX_RESPINS);
+            
+            Console.WriteLine($"[SpinHandler] Initializing respin feature: {wildReels.Count} wild reel(s) detected on reels {string.Join(", ", wildReels.Select(r => r + 1))}, awarding {respinsAwarded} respin(s)");
             
             state.Respins = new RespinState
             {
@@ -709,7 +617,7 @@ public sealed class SpinHandler
                 JustTriggered = true
             };
             
-            Console.WriteLine($"[SpinHandler] Respin feature triggered: {respinsAwarded} respins awarded, locked reels: {string.Join(", ", newLockedReels.Select(r => r + 1))}");
+            Console.WriteLine($"[SpinHandler] Respin feature initialized: RespinsRemaining={respinsAwarded}, locked reels: {string.Join(", ", newLockedReels.Select(r => r + 1))}");
         }
         else
         {

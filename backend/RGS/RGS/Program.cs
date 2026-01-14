@@ -78,6 +78,10 @@ app.MapPost("/{operatorId}/{gameId}/start",
             var session = sessions.CreateSession(operatorId, gameId, request.Token ?? string.Empty, funMode, initialBalance);
             var timestamp = timeService.UtcNow;
 
+            // Log session start
+            var playerId = request.Token ?? "DEMO_PLAYER";
+            GameLogger.LogSessionStart(session.SessionId, gameId, initialBalance, playerId);
+
             // Internal response for tracking
             var internalResponse = new StartResponse(
                 SessionId: session.SessionId,
@@ -90,7 +94,6 @@ app.MapPost("/{operatorId}/{gameId}/start",
 
             // Transform to client-compliant response
             var clientIp = httpContext.Connection.RemoteIpAddress?.ToString() ?? "127.0.0.1";
-            var playerId = request.Token ?? "DEMO_PLAYER";
             var clientResponse = ResponseTransformer.ToClientStartResponse(
                 internalResponse: internalResponse,
                 playerId: playerId,
@@ -186,6 +189,16 @@ app.MapPost("/{operatorId}/{gameId}/play",
                 UserPayload: request.UserPayload,
                 LastResponse: request.LastResponse);
 
+            // Log play request
+            var isRespin = session.State?.Respins is not null && session.State.Respins.RespinsRemaining > 0;
+            GameLogger.LogPlayRequest(
+                session.SessionId,
+                "pending", // RoundId not yet known
+                totalBet.Amount,
+                betMode.ToString(),
+                isRespin,
+                session.State?.Respins?.RespinsRemaining);
+
             var engineResponse = await engineClient.PlayAsync(engineRequest, cancellationToken);
             sessions.UpdateState(session.SessionId, engineResponse.NextState);
 
@@ -204,6 +217,25 @@ app.MapPost("/{operatorId}/{gameId}/play",
             logger.LogInformation("Balance updated: PrevBalance={PrevBalance}, Bet={Bet}, Win={Win}, NewBalance={NewBalance}", 
                 prevBalance, totalBet.Amount, engineResponse.Win.Amount, balance);
 
+            // Log balance update
+            GameLogger.LogBalanceUpdate(
+                session.SessionId,
+                prevBalance,
+                totalBet.Amount,
+                engineResponse.Win.Amount,
+                balance);
+
+            // Log engine response
+            var respinsRemaining = engineResponse.NextState.Respins?.RespinsRemaining;
+            var featureEnded = respinsRemaining.HasValue && respinsRemaining.Value == 0;
+            var gridLayout = FormatGridLayout(engineResponse.Results);
+            GameLogger.LogEngineResponse(
+                engineResponse.RoundId,
+                engineResponse.Win.Amount,
+                respinsRemaining,
+                featureEnded,
+                gridLayout);
+
             // Transform engine response to client-compliant format
             var clientResponse = ResponseTransformer.ToClientPlayResponse(
                 engineResponse: engineResponse,
@@ -213,6 +245,15 @@ app.MapPost("/{operatorId}/{gameId}/play",
                 bet: totalBet.Amount,
                 currencyId: currencyId,
                 maxWinCap: maxWinCap);
+
+            // Log RGS response
+            GameLogger.LogRgsResponse(
+                engineResponse.RoundId,
+                balance,
+                clientResponse.Feature.Name,
+                clientResponse.Feature.Type,
+                clientResponse.Feature.IsClosure,
+                clientResponse.Game.Mode);
 
             return Results.Ok(clientResponse);
         })
@@ -336,6 +377,43 @@ app.MapPost("/{operatorId}/player/balance",
     .WithName("GetBalance");
 
 app.Run();
+
+static string FormatGridLayout(ResultsEnvelope results)
+{
+    if (results.FinalGridSymbols == null || results.FinalGridSymbols.Count == 0)
+    {
+        return "  (No grid data)";
+    }
+
+    // Assume 5x3 grid (standard for Starburst)
+    const int cols = 5;
+    const int rows = 3;
+    var grid = results.FinalGridSymbols;
+    
+    var sb = new System.Text.StringBuilder();
+    
+    // Display as rows from top to bottom
+    for (int displayRow = rows - 1; displayRow >= 0; displayRow--)
+    {
+        var rowSymbols = new List<string>();
+        for (int col = 0; col < cols; col++)
+        {
+            var flatIndex = displayRow * cols + col;
+            if (flatIndex < grid.Count)
+            {
+                rowSymbols.Add($"ID{grid[flatIndex]}");
+            }
+            else
+            {
+                rowSymbols.Add("EMPTY");
+            }
+        }
+        var rowLabel = displayRow == rows - 1 ? "TOP" : displayRow == 0 ? "BOT" : "MID";
+        sb.AppendLine($"    {rowLabel} ROW: [{string.Join(" | ", rowSymbols)}]");
+    }
+    
+    return sb.ToString();
+}
 
 static bool TryParseBetMode(string? value, out BetMode mode)
 {

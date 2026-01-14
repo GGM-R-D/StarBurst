@@ -127,7 +127,8 @@ namespace GameEngine.Configuration
                 High: Resolve(configuration.Reels.Keys.High),
                 Low: Resolve(configuration.Reels.Keys.Low),
                 Buy: Resolve(configuration.Reels.Keys.Buy),
-                FreeSpins: Resolve(configuration.Reels.Keys.FreeSpins));
+                // Note: FreeSpins optional - not used in Starburst
+                FreeSpins: configuration.Reels.Keys.FreeSpins != null ? Resolve(configuration.Reels.Keys.FreeSpins) : Array.Empty<IReadOnlyList<string>>());
         }
 
         private static MultiplierProfiles BuildMultiplierProfiles(MultiplierConfiguration configuration)
@@ -147,10 +148,11 @@ namespace GameEngine.Configuration
             return new MultiplierProfiles
             {
                 Standard = Build(configuration.Weights.Standard),
-                Ante = Build(configuration.Weights.Ante),
-                FreeSpinsHigh = Build(configuration.Weights.FreeSpinsHigh),
-                FreeSpinsLow = Build(configuration.Weights.FreeSpinsLow),
-                FreeSpinsSwitchThreshold = configuration.Weights.FreeSpinsSwitchThreshold
+                // Note: Ante and FreeSpins profiles not used in Starburst - use empty if not provided
+                Ante = configuration.Weights.Ante != null ? Build(configuration.Weights.Ante) : Array.Empty<MultiplierWeight>(),
+                FreeSpinsHigh = configuration.Weights.FreeSpinsHigh != null ? Build(configuration.Weights.FreeSpinsHigh) : Array.Empty<MultiplierWeight>(),
+                FreeSpinsLow = configuration.Weights.FreeSpinsLow != null ? Build(configuration.Weights.FreeSpinsLow) : Array.Empty<MultiplierWeight>(),
+                FreeSpinsSwitchThreshold = configuration.Weights.FreeSpinsSwitchThreshold ?? 250m
             };
         }
     }
@@ -170,8 +172,9 @@ namespace GameEngine.Configuration
         public required IReadOnlyList<PaytableEntry> Paytable { get; init; }
         public required IReadOnlyList<Money> BetLevels { get; init; }
         public required int DefaultBetIndex { get; init; }
-        public required ScatterConfiguration Scatter { get; init; }
-        public required FreeSpinConfiguration FreeSpins { get; init; }
+        // Note: Scatter and FreeSpins are optional - not used in Starburst
+        public ScatterConfiguration? Scatter { get; init; }
+        public FreeSpinConfiguration? FreeSpins { get; init; }
         public required ReelConfiguration Reels { get; init; }
         public required decimal MaxWinMultiplier { get; init; }
 
@@ -238,7 +241,8 @@ namespace GameEngine.Configuration
     public sealed class BetLedger
     {
         public int BaseBetMultiplier { get; init; }
-        public int AnteBetMultiplier { get; init; }
+        // Note: AnteBetMultiplier optional - not used in Starburst
+        public int AnteBetMultiplier { get; init; } = 1;
         public int BuyFreeSpinsCostMultiplier { get; init; }
     }
 
@@ -265,10 +269,11 @@ namespace GameEngine.Configuration
     public sealed class MultiplierWeightDefinitions
     {
         public required Dictionary<string, int> Standard { get; init; }
-        public required Dictionary<string, int> Ante { get; init; }
-        public required Dictionary<string, int> FreeSpinsHigh { get; init; }
-        public required Dictionary<string, int> FreeSpinsLow { get; init; }
-        public required decimal FreeSpinsSwitchThreshold { get; init; }
+        // Note: Ante, FreeSpinsHigh, FreeSpinsLow optional - not used in Starburst
+        public Dictionary<string, int>? Ante { get; init; }
+        public Dictionary<string, int>? FreeSpinsHigh { get; init; }
+        public Dictionary<string, int>? FreeSpinsLow { get; init; }
+        public decimal? FreeSpinsSwitchThreshold { get; init; }
     }
 
     public sealed record MultiplierWeight(decimal Value, int Weight);
@@ -276,10 +281,12 @@ namespace GameEngine.Configuration
     public sealed class MultiplierProfiles
     {
         public required IReadOnlyList<MultiplierWeight> Standard { get; init; }
-        public required IReadOnlyList<MultiplierWeight> Ante { get; init; }
-        public required IReadOnlyList<MultiplierWeight> FreeSpinsHigh { get; init; }
-        public required IReadOnlyList<MultiplierWeight> FreeSpinsLow { get; init; }
-        public required decimal FreeSpinsSwitchThreshold { get; init; }
+        // Note: Ante, FreeSpinsHigh, FreeSpinsLow optional - not used in Starburst
+        // These are set to empty lists if not provided
+        public IReadOnlyList<MultiplierWeight> Ante { get; init; } = Array.Empty<MultiplierWeight>();
+        public IReadOnlyList<MultiplierWeight> FreeSpinsHigh { get; init; } = Array.Empty<MultiplierWeight>();
+        public IReadOnlyList<MultiplierWeight> FreeSpinsLow { get; init; } = Array.Empty<MultiplierWeight>();
+        public decimal FreeSpinsSwitchThreshold { get; init; } = 250m; // Default value, not used in Starburst
     }
 
     public sealed record PaytableEntry(string SymbolCode, IReadOnlyList<MultiplierEntry> Multipliers);
@@ -303,7 +310,8 @@ namespace GameEngine.Configuration
         public required string High { get; init; }
         public required string Low { get; init; }
         public required string Buy { get; init; }
-        public required string FreeSpins { get; init; }
+        // Note: FreeSpins optional - not used in Starburst
+        public string? FreeSpins { get; init; }
     }
 
     public sealed class ReelLibrary
@@ -317,13 +325,13 @@ namespace GameEngine.Configuration
             this.High = High;
             this.Low = Low;
             this.Buy = Buy;
-            this.FreeSpins = FreeSpins;
+            this.FreeSpins = FreeSpins ?? Array.Empty<IReadOnlyList<string>>();
         }
 
         public IReadOnlyList<IReadOnlyList<string>> High { get; }
         public IReadOnlyList<IReadOnlyList<string>> Low { get; }
         public IReadOnlyList<IReadOnlyList<string>> Buy { get; }
-        public IReadOnlyList<IReadOnlyList<string>> FreeSpins { get; }
+        public IReadOnlyList<IReadOnlyList<string>> FreeSpins { get; } = Array.Empty<IReadOnlyList<string>>();
     }
 
     /// <summary>

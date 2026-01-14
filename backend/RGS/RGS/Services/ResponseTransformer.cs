@@ -1,3 +1,4 @@
+using System.Linq;
 using GameEngine.Play;
 using RGS.Contracts;
 
@@ -75,7 +76,50 @@ public static class ResponseTransformer
         decimal maxWinCap)
     {
         var freeSpins = engineResponse.NextState.FreeSpins;
+        var respins = engineResponse.NextState.Respins; // Get respin state from backend
         var maxWinAchieved = engineResponse.Win.Amount >= maxWinCap && maxWinCap > 0;
+        
+        // Determine feature info - check respins first (Starburst uses respins, not free spins)
+        var featureName = "";
+        var featureType = "";
+        var featureIsClosure = 0;
+        
+        if (respins is not null && respins.RespinsRemaining > 0)
+        {
+            featureName = "Starburst Wilds";
+            featureType = "BONUS_GAME";
+            featureIsClosure = 0;
+            
+            // Log wild feature
+            var lockedReelsStr = respins.LockedWildReels != null && respins.LockedWildReels.Count > 0
+                ? string.Join(",", respins.LockedWildReels.Select(r => r + 1))
+                : "none";
+            GameLogger.LogWildFeature(
+                engineResponse.RoundId,
+                respins.LockedWildReels?.FirstOrDefault() ?? -1,
+                1, // Respins awarded (1 per wild reel)
+                respins.RespinsRemaining,
+                lockedReelsStr);
+        }
+        else if (respins is not null && respins.RespinsRemaining == 0)
+        {
+            // Feature just ended
+            featureName = "Starburst Wilds";
+            featureType = "BONUS_GAME";
+            featureIsClosure = 1;
+        }
+        else if (freeSpins is not null && freeSpins.SpinsRemaining > 0)
+        {
+            featureName = "FREESPINS";
+            featureType = "FREESPINS";
+            featureIsClosure = 0;
+        }
+        else if (freeSpins is not null && freeSpins.SpinsRemaining == 0)
+        {
+            featureName = "FREESPINS";
+            featureType = "FREESPINS";
+            featureIsClosure = 1;
+        }
 
         return new ClientPlayResponse(
             StatusCode: 6000,
@@ -92,8 +136,8 @@ public static class ResponseTransformer
                 Win: engineResponse.Win.Amount,
                 CurrencyId: currencyId),
             Game: new ClientPlayGame(
-                Results: engineResponse.Results, // Pass through engine results
-                Mode: 0,
+                Results: engineResponse.Results, // Pass through engine results (includes nextState in Results if needed)
+                Mode: respins is not null && respins.RespinsRemaining > 0 ? 2 : 0, // Mode 2 = bonus game (respin feature)
                 MaxWinCap: new ClientMaxWinCap(
                     Achieved: maxWinAchieved,
                     Value: maxWinCap,
@@ -109,9 +153,9 @@ public static class ResponseTransformer
             PromoFreeSpins: new ClientPlayPromoFreeSpins(0, 0, 0, 0, 0, 0),
             Jackpots: Array.Empty<object>(),
             Feature: new ClientPlayFeature(
-                Name: freeSpins is not null && freeSpins.SpinsRemaining > 0 ? "FREESPINS" : "",
-                Type: freeSpins is not null && freeSpins.SpinsRemaining > 0 ? "FREESPINS" : "",
-                IsClosure: freeSpins is not null && freeSpins.SpinsRemaining == 0 ? 1 : 0));
+                Name: featureName,
+                Type: featureType,
+                IsClosure: featureIsClosure));
     }
 }
 
