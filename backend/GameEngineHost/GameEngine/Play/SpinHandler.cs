@@ -268,11 +268,11 @@ public sealed class SpinHandler
             
             Console.WriteLine($"[SpinHandler] Respin completed: RespinsRemaining {respinsBeforeDecrement} -> {nextState.Respins.RespinsRemaining}");
             
-            // Clear respin state if all respins are exhausted (next spin will be paid base game)
+            // IMPORTANT: Keep Respins object with RespinsRemaining=0 so ResponseTransformer can detect feature ended
+            // It will be cleared on the next base game spin (see clearing logic at start of method)
             if (nextState.Respins.RespinsRemaining == 0)
             {
-                Console.WriteLine($"[SpinHandler] Respin feature ended - all respins exhausted. Next spin will be paid base game.");
-                nextState.Respins = null;
+                Console.WriteLine($"[SpinHandler] Respin feature ended - all respins exhausted. Keeping Respins object with RespinsRemaining=0 for one response to signal feature closure.");
             }
             else
             {
@@ -296,7 +296,8 @@ public sealed class SpinHandler
         finalGrid = symbolMapper.CodesToIds(finalGridCodes);
         
         // Log grid in readable format (5 columns x 3 rows)
-        LogGridLayout(finalGrid, configuration, "Final Grid");
+        var spinTypeLabel = spinMode == SpinMode.Respin ? "RESPIN" : "BASE";
+        LogGridLayout(finalGrid, configuration, $"{spinTypeLabel} SPIN - RoundId: {roundId}", roundId);
         
         Console.WriteLine($"[SpinHandler] Final grid ready: {finalGrid.Count} symbols");
 
@@ -683,13 +684,26 @@ public sealed class SpinHandler
         }
     }
 
-    private void LogGridLayout(IReadOnlyList<int> gridSymbolIds, GameConfiguration configuration, string label)
+    private void LogGridLayout(IReadOnlyList<int> gridSymbolIds, GameConfiguration configuration, string label, string? roundId = null)
     {
         var cols = configuration.Board.Columns;
         var rows = configuration.Board.Rows;
         var symbolMapper = configuration.SymbolIdMapper;
         
-        Console.WriteLine($"[SpinHandler] ========== {label} ({cols}x{rows}) ==========");
+        // Map symbol codes to readable names (matching frontend format)
+        var symbolNameMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            { "WILD", "WILD" },
+            { "BAR", "BAR" },
+            { "SEVEN", "SEVEN" },
+            { "RED", "RED" },
+            { "PURPLE", "PURPLE" },
+            { "BLUE", "BLUE" },
+            { "GREEN", "GREEN" },
+            { "ORANGE", "ORANGE" }
+        };
+        
+        Console.WriteLine($"\n[SpinHandler] ========== {label} ==========");
         
         // Grid is flattened as: [row2col0, row2col1, ..., row2col4, row1col0, ..., row0col0, ...]
         // Where row2 is bottom, row1 is middle, row0 is top
@@ -706,7 +720,9 @@ public sealed class SpinHandler
                     try
                     {
                         var symbolCode = symbolMapper.IdToCode(symbolId);
-                        rowSymbols.Add($"{symbolCode}({symbolId})");
+                        // Use readable name if available, otherwise use code
+                        var symbolName = symbolNameMap.TryGetValue(symbolCode, out var name) ? name : symbolCode;
+                        rowSymbols.Add($"{symbolName}({symbolId})");
                     }
                     catch
                     {
@@ -736,7 +752,9 @@ public sealed class SpinHandler
                     try
                     {
                         var symbolCode = symbolMapper.IdToCode(symbolId);
-                        colSymbols.Add($"{symbolCode}({symbolId})");
+                        // Use readable name if available, otherwise use code
+                        var symbolName = symbolNameMap.TryGetValue(symbolCode, out var name) ? name : symbolCode;
+                        colSymbols.Add($"{symbolName}({symbolId})");
                     }
                     catch
                     {
@@ -751,7 +769,7 @@ public sealed class SpinHandler
             Console.WriteLine($"[SpinHandler] REEL {col + 1}: [{string.Join(" | ", colSymbols)}]");
         }
         
-        Console.WriteLine($"[SpinHandler] ============================================");
+        Console.WriteLine($"[SpinHandler] ============================================\n");
     }
 
     private sealed class ReelBoard

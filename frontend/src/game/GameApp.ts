@@ -828,6 +828,12 @@ export class GameApp extends GameStateMachine {
       console.info('[GameApp] Base spin completed. inRespinFeature:', this.inRespinFeature, 'pendingRespins:', this.pendingRespins);
 
       // Check if respins were triggered
+      console.info('[GameApp] Checking respin trigger. State:', {
+        inRespinFeature: this.inRespinFeature,
+        pendingRespins: this.pendingRespins,
+        stickyWildReels: Array.from(this.stickyWildReels)
+      });
+      
       if (this.inRespinFeature && this.pendingRespins > 0) {
         console.info('[GameApp] Respins triggered! Starting respin loop...');
         // Show RESPIN label while feature is active (button stays disabled)
@@ -835,9 +841,11 @@ export class GameApp extends GameStateMachine {
 
         // Automatically play respins until feature ends
         while (this.pendingRespins > 0 && this.inRespinFeature) {
-          console.info(`[GameApp] Starting respin. Remaining: ${this.pendingRespins}`);
+          console.info(`[GameApp] ===== STARTING RESPIN =====`);
+          console.info(`[GameApp] Before decrement - pendingRespins: ${this.pendingRespins}, inRespinFeature: ${this.inRespinFeature}`);
           // Decrement BEFORE the respin (we're about to use one)
           this.pendingRespins--;
+          console.info(`[GameApp] After decrement - pendingRespins: ${this.pendingRespins}, inRespinFeature: ${this.inRespinFeature}`);
           // Ensure isSpinning is true for respin animation
           this.isSpinning = true;
           console.info('[GameApp] isSpinning set to true for respin');
@@ -856,11 +864,21 @@ export class GameApp extends GameStateMachine {
           console.info('[GameApp] Starting respin (win display should have completed)...');
           
           const respinResult = await this.playRound(true);
-          console.info('[GameApp] Respin completed. inRespinFeature:', this.inRespinFeature, 'pendingRespins:', this.pendingRespins, 'isSpinning:', this.isSpinning);
+          console.info('[GameApp] Respin completed. State:', {
+            inRespinFeature: this.inRespinFeature,
+            pendingRespins: this.pendingRespins,
+            stickyWildReels: Array.from(this.stickyWildReels),
+            isSpinning: this.isSpinning,
+            backendFeatureEnded: respinResult.feature?.isClosure === 1,
+            backendFeatureType: respinResult.feature?.type,
+            backendGameMode: respinResult.game?.mode
+          });
           
           // Check if feature should continue
-          if (!this.inRespinFeature || this.pendingRespins <= 0) {
-            console.info('[GameApp] Respin feature ended, breaking loop');
+          // Also check if backend explicitly said feature ended (IsClosure=1)
+          const featureEnded = respinResult.feature?.isClosure === 1 && respinResult.feature?.type === "BONUS_GAME";
+          if (!this.inRespinFeature || this.pendingRespins <= 0 || featureEnded) {
+            console.info('[GameApp] Respin feature ended, breaking loop. FeatureEnded:', featureEnded, 'pendingRespins:', this.pendingRespins, 'inRespinFeature:', this.inRespinFeature);
             break;
           }
         }
@@ -1063,14 +1081,25 @@ export class GameApp extends GameStateMachine {
     const totalSticky = this.stickyWildReels.size;
     const justStartedFeature = !this.inRespinFeature && totalSticky > 0;
 
+    // CRITICAL FIX: Only modify pendingRespins if we're NOT already in a respin loop
+    // If pendingRespins > 0, the respin loop in handleSpinButtonClick is managing it
+    // onSpinAnimationComplete should NOT modify pendingRespins during an active respin loop
     if (justStartedFeature) {
       this.inRespinFeature = true;
-      this.pendingRespins = 1; // at least 1 respin when feature starts
-      console.info('[GameApp] Respin feature triggered, sticky reels:', Array.from(this.stickyWildReels));
+      // Only set pendingRespins if it's 0 (not already in a loop)
+      if (this.pendingRespins === 0) {
+        this.pendingRespins = 1; // at least 1 respin when feature starts
+        console.info('[GameApp] Respin feature triggered, sticky reels:', Array.from(this.stickyWildReels));
+      } else {
+        console.info('[GameApp] Respin feature already active, pendingRespins:', this.pendingRespins);
+      }
     }
 
     // If we are in feature and got new wilds, may add extra respins (max 3 sticky reels)
-    if (this.inRespinFeature && newWildReels.length > 0) {
+    // BUT: Only if we're not currently in the middle of a respin loop (pendingRespins === 0)
+    // The respin loop manages pendingRespins, so we shouldn't modify it here during a loop
+    if (this.inRespinFeature && newWildReels.length > 0 && this.pendingRespins === 0) {
+      // Only add respins if we're not already in a respin loop
       const freeSlots = 3 - totalSticky + newWildReels.length;
       if (freeSlots > 0) {
         const currentStickyBeforeNew = totalSticky - newWildReels.length;
@@ -1154,6 +1183,7 @@ export class GameApp extends GameStateMachine {
       console.info('[GameApp] Backend indicates respin feature ended (IsClosure=1), clearing frontend state');
       this.inRespinFeature = false;
       this.pendingRespins = 0;
+      this.stickyWildReels.clear(); // Clear sticky wilds when feature ends
     }
 
     // Extract grid and wins from RGS response
@@ -1237,6 +1267,19 @@ export class GameApp extends GameStateMachine {
     const symbolsWithSticky = isRespin 
       ? this.applyStickyWildsToResult(resultGrid)
       : resultGrid;
+
+    // Log grid layout after every spin
+    this.logGridLayout(symbolsWithSticky, isRespin ? 'RESPIN' : 'BASE', response.player?.roundId);
+    
+    // Log respin state
+    console.info(`[GameApp] After ${isRespin ? 'RESPIN' : 'BASE'} spin - Respin State:`, {
+      inRespinFeature: this.inRespinFeature,
+      pendingRespins: this.pendingRespins,
+      stickyWildReels: Array.from(this.stickyWildReels),
+      backendRespinsRemaining: response.feature?.type === 'BONUS_GAME' ? 'active' : 'none',
+      backendFeatureEnded: response.feature?.isClosure === 1,
+      backendGameMode: response.game?.mode
+    });
 
     // Store initial grid for wild detection (before expansion)
     this.currentInitialGrid = initialGridForWildDetection;
@@ -1830,6 +1873,72 @@ export class GameApp extends GameStateMachine {
     }
 
     return cloned;
+  }
+
+  /**
+   * Convert SymbolId to readable name for logging
+   */
+  private symbolIdToName(symbolId: SymbolId): string {
+    const map: Record<string, string> = {
+      'SYM_WILD': 'WILD',
+      'SYM_BAR': 'BAR',
+      'SYM_SEVEN': 'SEVEN',
+      'SYM_RED': 'RED',
+      'SYM_PURPLE': 'PURPLE',
+      'SYM_BLUE': 'BLUE',
+      'SYM_GREEN': 'GREEN',
+      'SYM_ORANGE': 'ORANGE',
+    };
+    return map[symbolId] || symbolId;
+  }
+
+  /**
+   * Log grid layout in readable format
+   */
+  private logGridLayout(grid: SymbolId[][], spinType: 'BASE' | 'RESPIN', roundId?: string): void {
+    const cols = grid.length;
+    const rows = grid[0]?.length || 0;
+    
+    console.info(`\n========== ${spinType} SPIN${roundId ? ` - RoundId: ${roundId}` : ''} ==========`);
+    
+    // Log by rows (TOP, MID, BOT)
+    const rowNames = ['TOP', 'MID', 'BOT'];
+    for (let row = rows - 1; row >= 0; row--) {
+      const rowName = rowNames[rows - 1 - row] || `ROW${row + 1}`;
+      const rowSymbols: string[] = [];
+      for (let col = 0; col < cols; col++) {
+        const symbol = grid[col]?.[row];
+        if (symbol) {
+          const name = this.symbolIdToName(symbol);
+          // Try to extract numeric ID if available (for format: NAME(ID))
+          const symbolIdMatch = symbol.match(/(\d+)/);
+          const id = symbolIdMatch ? symbolIdMatch[1] : '';
+          rowSymbols.push(id ? `${name}(${id})` : name);
+        } else {
+          rowSymbols.push('EMPTY');
+        }
+      }
+      console.info(`${rowName} ROW: [${rowSymbols.join(' | ')}]`);
+    }
+    
+    // Log by reels (columns)
+    console.info('--- Column View (Reels) ---');
+    for (let col = 0; col < cols; col++) {
+      const reelSymbols: string[] = [];
+      for (let row = rows - 1; row >= 0; row--) {
+        const symbol = grid[col]?.[row];
+        if (symbol) {
+          const name = this.symbolIdToName(symbol);
+          const symbolIdMatch = symbol.match(/(\d+)/);
+          const id = symbolIdMatch ? symbolIdMatch[1] : '';
+          reelSymbols.push(id ? `${name}(${id})` : name);
+        } else {
+          reelSymbols.push('EMPTY');
+        }
+      }
+      console.info(`REEL ${col + 1}: [${reelSymbols.join(' | ')}]`);
+    }
+    console.info('============================================\n');
   }
 
   /**
