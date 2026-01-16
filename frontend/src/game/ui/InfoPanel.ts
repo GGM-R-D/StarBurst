@@ -1,6 +1,6 @@
 // src/game/ui/InfoPanel.ts
 import { Container, Graphics, Text, Sprite, Texture } from 'pixi.js';
-import { SYMBOL_PAYTABLE, RULES_TEXT } from '../config/paytableConfig';
+import { SYMBOL_PAYTABLE, RULES_TEXT, PAYLINES_CONFIG } from '../config/paytableConfig';
 import type { SymbolId } from '@game/demo/SpinTypes';
 import { createSymbolSprite } from '@game/symbols/SymbolFactory';
 
@@ -316,103 +316,249 @@ export class InfoPanel extends Container {
     this.paytableContainer.x = 0;
     this.paytableContainer.y = 0;
 
-    const columnX = x;
-    let rowY = y;
+    let currentY = y;
+    const sectionSpacing = 50; // Increased spacing between sections
 
-    const lineSpacing = 45; // Reduced spacing to fit more content
-    const iconSize = 36; // Smaller icons to fit better
+    // Section 1: PAYLINES (5x3 matrix for each payline)
+    const paylinesTitle = new Text('PAYLINES', {
+      fontFamily: 'Arial',
+      fontSize: 22,
+      fill: 0xffd700,
+      fontWeight: 'bold'
+    });
+    paylinesTitle.x = x;
+    paylinesTitle.y = currentY;
+    this.paytableContainer.addChild(paylinesTitle);
+    currentY += paylinesTitle.height + 25;
+
+    // Create payline matrices - better organized layout
+    const matrixSize = 18; // Slightly larger for better visibility
+    const matrixSpacing = 4; // More spacing between cells
+    const paylineVerticalSpacing = 25; // Spacing between payline rows
+    const paylineHorizontalSpacing = 60; // Spacing between payline columns (reduced for 5 per row)
+    const paylinesPerRow = 5; // Show 5 paylines per row
+    let paylineX = x;
+    let paylineRowStartY = currentY;
+    let maxRowHeight = 0;
+
+    for (let i = 0; i < PAYLINES_CONFIG.length; i++) {
+      const payline = PAYLINES_CONFIG[i];
+      const isNewRow = i % paylinesPerRow === 0;
+      
+      if (isNewRow && i > 0) {
+        // Start new row - move down by the max height of previous row
+        paylineX = x;
+        currentY += maxRowHeight + paylineVerticalSpacing;
+        paylineRowStartY = currentY;
+        maxRowHeight = 0;
+      } else if (!isNewRow) {
+        // Move to next column in same row
+        paylineX += 5 * (matrixSize + matrixSpacing) + paylineHorizontalSpacing;
+      }
+      
+      // Create payline label
+      const paylineLabel = new Text(`Payline ${payline.id}`, {
+        fontFamily: 'Arial',
+        fontSize: 12,
+        fill: 0xffffff,
+        fontWeight: 'bold'
+      });
+      paylineLabel.x = paylineX;
+      paylineLabel.y = paylineRowStartY;
+      this.paytableContainer.addChild(paylineLabel);
+      
+      const matrixStartY = paylineRowStartY + paylineLabel.height + 8;
+
+      // Create 5x3 matrix (5 reels, 3 rows)
+      for (let reel = 0; reel < 5; reel++) {
+        for (let row = 0; row < 3; row++) {
+          const cellX = paylineX + reel * (matrixSize + matrixSpacing);
+          const cellY = matrixStartY + row * (matrixSize + matrixSpacing);
+          
+          // Check if this position is part of the payline
+          const isActive = payline.rows[reel] === row;
+          
+          const cell = new Graphics();
+          cell.beginFill(isActive ? 0x9b59ff : 0x333333, 1);
+          cell.lineStyle(1.5, isActive ? 0xffffff : 0x666666, 1);
+          cell.drawRect(0, 0, matrixSize, matrixSize);
+          cell.endFill();
+          cell.x = cellX;
+          cell.y = cellY;
+          this.paytableContainer.addChild(cell);
+        }
+      }
+
+      // Calculate height of this payline (label + matrix)
+      const matrixHeight = 3 * (matrixSize + matrixSpacing);
+      const totalHeight = paylineLabel.height + 8 + matrixHeight;
+      maxRowHeight = Math.max(maxRowHeight, totalHeight);
+    }
+
+    // Update currentY to after last row
+    currentY += maxRowHeight;
+    currentY += sectionSpacing;
+
+    // Section 2: PAYOUTS (Table format with dynamic amounts)
+    const payoutsTitle = new Text('PAYOUTS (Bet per line: ' + this.currentLineBet.toFixed(2) + ')', {
+      fontFamily: 'Arial',
+      fontSize: 22,
+      fill: 0xffd700,
+      fontWeight: 'bold'
+    });
+    payoutsTitle.x = x;
+    payoutsTitle.y = currentY;
+    this.paytableContainer.addChild(payoutsTitle);
+    currentY += payoutsTitle.height + 25;
+
+    // Table headers with better spacing
+    const headerY = currentY;
+    const headerStyle = {
+      fontFamily: 'Arial',
+      fontSize: 16,
+      fill: 0xffd700,
+      fontWeight: 'bold'
+    };
+
+    const symbolHeader = new Text('Symbol', headerStyle);
+    symbolHeader.x = x;
+    symbolHeader.y = headerY;
+    this.paytableContainer.addChild(symbolHeader);
+
+    const x3Header = new Text('3x', headerStyle);
+    x3Header.x = x + 180;
+    x3Header.y = headerY;
+    this.paytableContainer.addChild(x3Header);
+
+    const x4Header = new Text('4x', headerStyle);
+    x4Header.x = x + 260;
+    x4Header.y = headerY;
+    this.paytableContainer.addChild(x4Header);
+
+    const x5Header = new Text('5x', headerStyle);
+    x5Header.x = x + 340;
+    x5Header.y = headerY;
+    this.paytableContainer.addChild(x5Header);
+
+    // Draw header underline
+    const headerLine = new Graphics();
+    headerLine.lineStyle(2, 0xffd700, 0.5);
+    headerLine.moveTo(x, headerY + 25);
+    headerLine.lineTo(x + 420, headerY + 25);
+    this.paytableContainer.addChild(headerLine);
+
+    currentY += 35;
+
+    // Table rows for each symbol with better spacing
+    const rowSpacing = 45;
+    const iconSize = 36;
+    
+    // Calculate right side position for wild section
+    const rightSideX = x + 450; // Position to the right of the payouts table
+    let rightSideY = currentY; // Start at same Y as payouts table
 
     for (const entry of SYMBOL_PAYTABLE) {
       if (entry.isWild) {
-        // Wild gets its own section lower down
-        continue;
+        continue; // Wild handled separately on the right side
       }
 
-      // Icon - create sprite from symbol factory
+      // Icon
       try {
         const sprite = createSymbolSprite(entry.id);
         sprite.width = iconSize;
         sprite.height = iconSize;
-        sprite.x = columnX;
-        sprite.y = rowY;
+        sprite.x = x;
+        sprite.y = currentY - 2;
         sprite.anchor.set(0, 0);
         this.paytableContainer.addChild(sprite);
       } catch (error) {
         console.warn(`Failed to create sprite for ${entry.id}:`, error);
-        // Create placeholder
-        const placeholder = new Graphics();
-        placeholder.beginFill(0x666666, 1);
-        placeholder.drawRect(0, 0, iconSize, iconSize);
-        placeholder.endFill();
-        placeholder.x = columnX;
-        placeholder.y = rowY;
-        this.paytableContainer.addChild(placeholder);
       }
 
-      // Name + pays text - calculate actual payout amounts based on line bet
+      // Symbol name
+      const nameText = new Text(entry.displayName, {
+        fontFamily: 'Arial',
+        fontSize: 15,
+        fill: 0xffffff,
+        fontWeight: '500'
+      });
+      nameText.x = x + iconSize + 12;
+      nameText.y = currentY + 6;
+      this.paytableContainer.addChild(nameText);
+
+      // Payout amounts (calculated based on current line bet)
       const pays = entry.pays;
       const lb = this.currentLineBet;
       const p3 = pays[3] != null ? (pays[3] * lb).toFixed(2) : '-';
       const p4 = pays[4] != null ? (pays[4] * lb).toFixed(2) : '-';
       const p5 = pays[5] != null ? (pays[5] * lb).toFixed(2) : '-';
-      
-      const textStr = `${entry.displayName.toUpperCase()}  –  5x ${p5}   4x ${p4}   3x ${p3}`;
-      const text = new Text(textStr, {
-        fontFamily: 'Arial',
-        fontSize: 15, // Smaller font to fit better
-        fill: 0xffffff
-      });
-      text.x = columnX + iconSize + 12;
-      text.y = rowY + 2;
-      this.paytableContainer.addChild(text);
 
-      rowY += lineSpacing;
+      const payoutStyle = {
+        fontFamily: 'Arial',
+        fontSize: 15,
+        fill: 0xffffff,
+        fontWeight: '500'
+      };
+
+      const p3Text = new Text(p3, payoutStyle);
+      p3Text.x = x + 180;
+      p3Text.y = currentY + 6;
+      this.paytableContainer.addChild(p3Text);
+
+      const p4Text = new Text(p4, payoutStyle);
+      p4Text.x = x + 260;
+      p4Text.y = currentY + 6;
+      this.paytableContainer.addChild(p4Text);
+
+      const p5Text = new Text(p5, payoutStyle);
+      p5Text.x = x + 340;
+      p5Text.y = currentY + 6;
+      this.paytableContainer.addChild(p5Text);
+
+      currentY += rowSpacing;
     }
 
-    // Wild section below others
+    // Wild section on the right side of the panel
     const wildEntry = SYMBOL_PAYTABLE.find(e => e.isWild);
     if (wildEntry) {
-      rowY += 10;
+      // Draw vertical separator line
+      const separatorLine = new Graphics();
+      separatorLine.lineStyle(1, 0x666666, 0.5);
+      separatorLine.moveTo(rightSideX - 20, rightSideY - 10);
+      separatorLine.lineTo(rightSideX - 20, rightSideY + 300);
+      this.paytableContainer.addChild(separatorLine);
 
       try {
         const sprite = createSymbolSprite(wildEntry.id);
         sprite.width = iconSize;
         sprite.height = iconSize;
-        sprite.x = columnX;
-        sprite.y = rowY;
+        sprite.x = rightSideX;
+        sprite.y = rightSideY;
         sprite.anchor.set(0, 0);
         this.paytableContainer.addChild(sprite);
       } catch (error) {
         console.warn(`Failed to create sprite for ${wildEntry.id}:`, error);
-        // Create placeholder
-        const placeholder = new Graphics();
-        placeholder.beginFill(0xffe66d, 1);
-        placeholder.drawRect(0, 0, iconSize, iconSize);
-        placeholder.endFill();
-        placeholder.x = columnX;
-        placeholder.y = rowY;
-        this.paytableContainer.addChild(placeholder);
       }
 
       const wildTitle = new Text('WILD SYMBOL', {
         fontFamily: 'Arial',
-        fontSize: 16, // Smaller font
+        fontSize: 16,
         fill: 0xffe66d,
         fontWeight: 'bold'
       });
-      wildTitle.x = columnX + iconSize + 12;
-      wildTitle.y = rowY;
+      wildTitle.x = rightSideX + iconSize + 12;
+      wildTitle.y = rightSideY + 6;
       this.paytableContainer.addChild(wildTitle);
 
       const wildDesc = new Text(wildEntry.description ?? '', {
         fontFamily: 'Arial',
-        fontSize: 13, // Smaller font
-        fill: 0xffffff,
+        fontSize: 13,
+        fill: 0xcccccc,
         wordWrap: true,
-        wordWrapWidth: width - iconSize - 24
+        wordWrapWidth: width - rightSideX - iconSize - 40
       });
-      wildDesc.x = columnX + iconSize + 12;
-      wildDesc.y = rowY + 20;
+      wildDesc.x = rightSideX + iconSize + 12;
+      wildDesc.y = rightSideY + 28;
       this.paytableContainer.addChild(wildDesc);
     }
   }
