@@ -1200,10 +1200,17 @@ export class GameApp extends GameStateMachine {
       bets: [{ betType: 'BASE', amount: totalBet }]
     });
 
-    // Update balance
+    // Update balance from backend response (backend calculates: prevBalance - bet + win)
     if (response.player) {
       this.balance = response.player.balance;
       this.bottomBar.setBalance(this.balance);
+      console.info('[GameApp] Balance updated from backend:', {
+        prevBalance: response.player.prevBalance,
+        bet: response.player.bet,
+        win: response.player.win,
+        newBalance: response.player.balance,
+        calculated: response.player.prevBalance - response.player.bet + response.player.win
+      });
     }
 
     // Only check if backend says feature ended - clear state if so
@@ -2241,10 +2248,9 @@ export class GameApp extends GameStateMachine {
         this.paylineView.clearPaylines();
       }
 
-      // Update balance
-      this.balance += totalWin;
-      this.bottomBar.setBalance(this.balance);
-
+      // Balance is already updated from backend response in playRound/onSpinResult
+      // Do NOT update balance here - backend already calculated: prevBalance - bet + win = newBalance
+      // Adding win here would cause double-counting
       console.info('Spin wins', { wins, totalWin, balance: this.balance });
     } finally {
       this.isWinAnimating = false;

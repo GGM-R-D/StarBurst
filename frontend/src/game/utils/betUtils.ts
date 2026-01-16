@@ -3,8 +3,8 @@
  * Uses exact bet levels from backend configuration.
  */
 
-// Bet levels from backend config: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.2, 1.4, 1.5, 1.6, 1.8, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0]
-const BET_LEVELS = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.2, 1.4, 1.5, 1.6, 1.8, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0];
+// Bet levels from backend config: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.2, 1.4, 1.5, 1.6, 1.8, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0, 6, 7, 8, 9, 10, 12, 14, 16, 18, 20, 25, 30, 35, 40, 45, 50, 60, 70, 80, 90, 100]
+const BET_LEVELS = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.2, 1.4, 1.5, 1.6, 1.8, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0, 6, 7, 8, 9, 10, 12, 14, 16, 18, 20, 25, 30, 35, 40, 45, 50, 60, 70, 80, 90, 100];
 
 /**
  * Get the closest bet level to the current bet.
@@ -28,7 +28,7 @@ function getClosestBetLevel(bet: number): number {
 /**
  * Calculate the next bet amount from the bet levels array.
  */
-export function getNextBetAmount(currentBet: number, maxBet: number = 5.0): number {
+export function getNextBetAmount(currentBet: number, maxBet: number = 100.0): number {
   const rounded = roundToTwoDecimals(currentBet);
   const currentIndex = BET_LEVELS.findIndex(level => level >= rounded);
   
@@ -73,7 +73,7 @@ export function roundToTwoDecimals(value: number): number {
 /**
  * Generate all valid bet amounts from the bet levels array.
  */
-export function generateBetAmounts(minBet: number = 0.1, maxBet: number = 5.0): number[] {
+export function generateBetAmounts(minBet: number = 0.1, maxBet: number = 100.0): number[] {
   return BET_LEVELS.filter(level => level >= minBet && level <= maxBet);
 }
 

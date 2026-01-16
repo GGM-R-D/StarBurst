@@ -1,6 +1,6 @@
 import { Container, Graphics, Text } from 'pixi.js';
 import gsap from 'gsap';
-import { getNextBetAmount, getPreviousBetAmount, roundToTwoDecimals } from '@game/utils/betUtils';
+import { getNextBetAmount, getPreviousBetAmount, roundToTwoDecimals, getBetLevels } from '@game/utils/betUtils';
 
 export interface BottomBarCallbacks {
   onSpin?: () => void;
@@ -198,7 +198,9 @@ export class BottomBar extends Container {
   }
 
   private increaseBet(): void {
-    const newBet = getNextBetAmount(this.currentBet, 5.0);
+    const betLevels = getBetLevels();
+    const maxBet = betLevels[betLevels.length - 1];
+    const newBet = getNextBetAmount(this.currentBet, maxBet);
     if (newBet !== this.currentBet) {
       this.setBet(newBet);
       this.callbacks.onBetIncrease?.();

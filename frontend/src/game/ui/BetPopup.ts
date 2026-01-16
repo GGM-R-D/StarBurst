@@ -1,6 +1,6 @@
 import { Container, Graphics, Text, TextStyle } from 'pixi.js';
 import { Modal } from './Modal';
-import { roundToTwoDecimals, getNextBetAmount, getPreviousBetAmount } from '@game/utils/betUtils';
+import { roundToTwoDecimals, getNextBetAmount, getPreviousBetAmount, getBetLevels } from '@game/utils/betUtils';
 
 export interface BetPopupCallbacks {
   onBetSelected?: (bet: number) => void;
@@ -118,7 +118,9 @@ export class BetPopup extends Modal {
     // Plus button (right section)
     this.betPlusButton = this.createControlButton('+', sectionX + sectionWidth - sectionPartWidth / 2, y + sectionHeight / 2, true);
     this.betPlusButton.on('pointertap', () => {
-      const newBet = getNextBetAmount(this.selectedTotalBet, 5.0);
+      const betLevels = getBetLevels();
+      const maxBet = betLevels[betLevels.length - 1];
+      const newBet = getNextBetAmount(this.selectedTotalBet, maxBet);
       this.updateBet(newBet);
     });
     this.contentContainer.addChild(this.betPlusButton);
@@ -206,8 +208,10 @@ export class BetPopup extends Modal {
     this.betMaxButton.addChild(this.betMaxText);
     
     this.betMaxButton.on('pointertap', () => {
-      // Set to maximum bet (5.0)
-      this.updateBet(5.0);
+      // Set to maximum bet from bet levels
+      const betLevels = getBetLevels();
+      const maxBet = betLevels[betLevels.length - 1];
+      this.updateBet(maxBet);
       // Apply bet and close
       this.applyBet();
       this.close();
