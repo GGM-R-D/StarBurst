@@ -97,9 +97,18 @@ public sealed class WinEvaluator
             if (bestWin != null)
             {
                 var paylineId = paylineIndex + 1; // Payline IDs start at 1
-                if (!paylineWins.ContainsKey(paylineId) || bestWin.Payout.Amount > paylineWins[paylineId].Payout.Amount)
+                // Create a new SymbolWin with payline ID included
+                var winWithPayline = new SymbolWin(
+                    bestWin.SymbolCode,
+                    bestWin.Count,
+                    bestWin.Multiplier,
+                    bestWin.Payout,
+                    bestWin.Indices,
+                    paylineId);
+                
+                if (!paylineWins.ContainsKey(paylineId) || winWithPayline.Payout.Amount > paylineWins[paylineId].Payout.Amount)
                 {
-                    paylineWins[paylineId] = bestWin;
+                    paylineWins[paylineId] = winWithPayline;
                 }
             }
         }

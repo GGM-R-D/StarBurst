@@ -571,8 +571,8 @@ export class GameApp extends GameStateMachine {
       this.audioManager.registerSound(key, config);
     });
 
-    // Start background music
-    this.audioManager.playMusic('background-music');
+    // Start background music - DISABLED BY DEFAULT
+    // this.audioManager.playMusic('background-music');
     
     // Debug: Log registered sounds
     console.info('[GameApp] Sounds registered:', Object.keys(SOUND_CONFIG));
@@ -1042,29 +1042,58 @@ export class GameApp extends GameStateMachine {
 
     console.info('[GameApp] Spin animation complete, processing wilds and wins...');
 
-    // Read the final grid now shown on reels
+    // Read the current grid (should be initial grid before expansion)
     let grid = this.reelsView.getCurrentGrid();
 
-    // Detect new wild reels from the INITIAL grid (before wild expansion)
-    // Use the stored initial grid from playRound, or fallback to current grid
+    // Get initial and final grids from backend
     const initialGrid = this.currentInitialGrid || grid;
-    
-    // Detect new wild reels from INITIAL grid (before expansion)
+    const finalGrid = this.currentFinalGrid || grid;
+
+    // Detect which reels need to be expanded by comparing initial and final grids
+    // A reel needs expansion if it has a single wild in initial grid but all wilds in final grid
+    const reelsToExpand: number[] = [];
+    if (initialGrid && finalGrid && initialGrid.length === finalGrid.length) {
+      for (let col = 0; col < initialGrid.length; col++) {
+        const initialReel = initialGrid[col];
+        const finalReel = finalGrid[col];
+        
+        if (initialReel && finalReel && initialReel.length === finalReel.length) {
+          // Check if initial reel has at least one wild
+          const initialWildCount = initialReel.filter(s => s === 'SYM_WILD').length;
+          // Check if final reel has all wilds
+          const finalWildCount = finalReel.filter(s => s === 'SYM_WILD').length;
+          const isAllWilds = finalWildCount === finalReel.length;
+          
+          // If initial has some wilds but not all, and final has all wilds, this reel needs expansion
+          if (initialWildCount > 0 && initialWildCount < initialReel.length && isAllWilds) {
+            reelsToExpand.push(col);
+            console.info(`[GameApp] Reel ${col + 1} needs expansion: ${initialWildCount} wild(s) -> all wilds`);
+          }
+        }
+      }
+    }
+
+    // Also detect new wild reels from the INITIAL grid (for respin feature tracking)
     const newWildReels = this.detectNewWildReels(initialGrid);
     console.info('[GameApp] Detected new wild reels from initial grid:', newWildReels);
+    console.info('[GameApp] Reels to expand visually:', reelsToExpand);
 
-    // Expand new wilds and mark as sticky
-    if (newWildReels.length > 0) {
-      console.info('[GameApp] Expanding wild reels:', newWildReels);
-      for (const col of newWildReels) {
-        // Expand visually
+    // Expand wilds visually if needed
+    if (reelsToExpand.length > 0) {
+      console.info('[GameApp] Expanding wild reels visually:', reelsToExpand);
+      for (const col of reelsToExpand) {
+        // Expand visually (this updates symbolIds internally)
         await this.reelsView.expandWildReels([col]);
         this.reelsView.lockReels([col]);
         // Mark logic as sticky for future respins
         this.stickyWildReels.add(col);
       }
-      // Refresh grid after expansion (so all wild rows are SYM_WILD)
+      // Get updated grid from reels view after expansion
       grid = this.reelsView.getCurrentGrid();
+    } else if (finalGrid) {
+      // No expansion needed, but ensure grid matches final state
+      // This handles cases where locked reels are already expanded (respins)
+      grid = finalGrid;
     }
 
     // Evaluate and pay wins for this spin (with expanded wilds)
@@ -1242,14 +1271,15 @@ export class GameApp extends GameStateMachine {
     }
 
     // Get initial grid (before wild expansion) from first cascade if available
-    // This is needed to detect NEW wilds before they're expanded
+    // This is needed to detect NEW wilds before they're expanded AND for visual animation
     let initialGridForWildDetection = resultGrid;
+    let finalGridAfterExpansion = resultGrid; // Final grid after wild expansion
     if (actualResults && typeof actualResults === 'object') {
       const results = actualResults as any;
       if (results.cascades && Array.isArray(results.cascades) && results.cascades.length > 0) {
         const firstCascade = results.cascades[0];
         if (firstCascade.gridBefore && Array.isArray(firstCascade.gridBefore)) {
-          // Convert initial grid from backend format
+          // Convert initial grid from backend format (before expansion)
           const initialGridConverted = convertEngineResultsToGrid(
             { finalGridSymbols: firstCascade.gridBefore },
             layout.cols,
@@ -1257,16 +1287,35 @@ export class GameApp extends GameStateMachine {
           );
           if (initialGridConverted) {
             initialGridForWildDetection = initialGridConverted;
-            console.info('[GameApp] Using initial grid from first cascade for wild detection');
+            console.info('[GameApp] Using initial grid from first cascade (before wild expansion)');
+          }
+        }
+        if (firstCascade.gridAfter && Array.isArray(firstCascade.gridAfter)) {
+          // Convert final grid from backend format (after expansion)
+          const finalGridConverted = convertEngineResultsToGrid(
+            { finalGridSymbols: firstCascade.gridAfter },
+            layout.cols,
+            layout.rows
+          );
+          if (finalGridConverted) {
+            finalGridAfterExpansion = finalGridConverted;
+            console.info('[GameApp] Using final grid from first cascade (after wild expansion)');
           }
         }
       }
     }
 
-    // Apply sticky wilds for respins
+    // IMPORTANT: Use initialGridForWildDetection (gridBefore) for animation
+    // This shows the single wild falling, then we'll expand it visually
+    // Apply sticky wilds for respins (but use initial grid for animation)
+    const symbolsForAnimation = isRespin 
+      ? this.applyStickyWildsToResult(initialGridForWildDetection)
+      : initialGridForWildDetection;
+    
+    // Store final grid (after expansion) for use after animation
     const symbolsWithSticky = isRespin 
-      ? this.applyStickyWildsToResult(resultGrid)
-      : resultGrid;
+      ? this.applyStickyWildsToResult(finalGridAfterExpansion)
+      : finalGridAfterExpansion;
 
     // Log grid layout after every spin
     this.logGridLayout(symbolsWithSticky, isRespin ? 'RESPIN' : 'BASE', response.player?.roundId);
@@ -1283,6 +1332,8 @@ export class GameApp extends GameStateMachine {
 
     // Store initial grid for wild detection (before expansion)
     this.currentInitialGrid = initialGridForWildDetection;
+    // Store final grid for wild expansion animation (after expansion)
+    this.currentFinalGrid = symbolsWithSticky;
     // Store response for checking respin state in onSpinAnimationComplete
     this.currentResponse = response;
 
@@ -1331,9 +1382,10 @@ export class GameApp extends GameStateMachine {
     // This ensures the sound plays when the reels actually start spinning
     this.audioManager.play('spin');
 
-    // Animate reels - callback will be called when done
+    // Animate reels to INITIAL grid (before wild expansion) - callback will be called when done
     // Note: Spin sound is stopped in ReelsView.animateSpinTo() when reels stop (before win animations)
-    await this.reelsView.animateSpinTo(symbolsWithSticky, this.spinSpeed);
+    // We'll expand wilds visually after animation completes
+    await this.reelsView.animateSpinTo(symbolsForAnimation, this.spinSpeed);
 
     // Wait for animation completion AND wild/win processing to complete
     // This ensures pendingRespins is set before we check it in handleSpinButtonClick

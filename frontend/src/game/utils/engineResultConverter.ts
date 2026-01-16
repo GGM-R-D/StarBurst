@@ -128,7 +128,12 @@ export function convertEngineResultsToGrid(
   };
 
   // Engine returns symbols in row-major order, bottom-to-top: 
-  // [row2col0, row2col1, ..., row2col4, row1col0, row1col1, ..., row0col0, row0col1, ...]
+  // Backend FlattenIds: for (row = rows-1; row >= 0; row--) for each column
+  // So format is: [BOT_ROW_ALL_COLS, MID_ROW_ALL_COLS, TOP_ROW_ALL_COLS]
+  // For 3x5 grid: 
+  //   - Backend row 2 (bottom) = indices 0-4 (first 5 elements)
+  //   - Backend row 1 (middle) = indices 5-9 (next 5 elements)
+  //   - Backend row 0 (top) = indices 10-14 (last 5 elements)
   // Frontend expects column-major: [[col0row0, col0row1, col0row2], [col1row0, ...], ...]
   // Where row0 is top, row2 is bottom
   const grid: SymbolId[][] = [];
@@ -136,12 +141,14 @@ export function convertEngineResultsToGrid(
   for (let col = 0; col < cols; col++) {
     grid[col] = [];
     for (let row = 0; row < rows; row++) {
-      // Engine flattens bottom-to-top: row (rows-1) first, then (rows-2), etc.
-      // So for a 3-row grid: row2 (index 2) comes first, then row1, then row0
-      // Frontend expects top-to-bottom: row0 (top), row1, row2 (bottom)
-      // So we need to reverse the row order
-      const engineRow = rows - 1 - row; // Convert frontend row (top=0) to engine row (bottom=rows-1)
-      const flatIndex = engineRow * cols + col;
+      // Backend iterates bottom-to-top: row 2, then 1, then 0
+      // So backend row 2 (bottom) is at flat array position 0, row 1 at position 1, row 0 at position 2
+      // Formula: flatIndex = (rows - 1 - backendRow) * cols + col
+      // But we want: frontendRow 0 (top) -> backendRow 0 (top), frontendRow 2 (bottom) -> backendRow 2 (bottom)
+      // So: backendRow = frontendRow
+      // flatIndex = (rows - 1 - frontendRow) * cols + col
+      const backendRow = row; // Frontend row index matches backend row index (0=top, 2=bottom)
+      const flatIndex = (rows - 1 - backendRow) * cols + col;
       const symbolValue = symbolData[flatIndex];
       const symbolId = toSymbolId(symbolValue);
       grid[col][row] = symbolId;

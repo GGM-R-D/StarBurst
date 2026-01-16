@@ -60,7 +60,8 @@ public sealed record SymbolWin(
     int Count,
     decimal Multiplier,
     Money Payout,
-    IReadOnlyList<int>? Indices = null);
+    IReadOnlyList<int>? Indices = null,
+    int? PaylineId = null); // Payline ID (1-10) that this win occurred on
 
 public sealed record ScatterOutcome(int SymbolCount, Money Win, int FreeSpinsAwarded);
 

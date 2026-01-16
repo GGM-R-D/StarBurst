@@ -101,14 +101,41 @@ public sealed class SpinHandler
         var multiplierFactory = new Func<SymbolDefinition, decimal>(symbol =>
             AssignMultiplierValue(symbol, configuration, request.BetMode, spinMode, null, randomContext));
 
+        // During respin mode, preserve locked wild reels (don't spin them)
+        // CRITICAL: Even if RespinsRemaining is 0, we should still preserve locked reels if they exist
+        // This handles the case where the feature just ended but we need to preserve the locked reels for the final spin
+        var lockedReelsForBoardCreation = (spinMode == SpinMode.Respin && nextState.Respins is not null && nextState.Respins.LockedWildReels.Count > 0)
+            ? nextState.Respins.LockedWildReels
+            : null;
+
+        // Detailed logging for debugging locked reels issue
+        Console.WriteLine($"[SpinHandler] Board creation - SpinMode: {spinMode}, HasRespins: {nextState.Respins != null}, RespinsRemaining: {nextState.Respins?.RespinsRemaining ?? 0}");
+        if (nextState.Respins != null)
+        {
+            Console.WriteLine($"[SpinHandler] Respin state details - LockedWildReels count: {nextState.Respins.LockedWildReels.Count}, LockedWildReels: [{string.Join(", ", nextState.Respins.LockedWildReels)}] (0-based)");
+            if (nextState.Respins.LockedWildReels.Count > 0)
+            {
+                Console.WriteLine($"[SpinHandler] LockedWildReels (1-based for display): [{string.Join(", ", nextState.Respins.LockedWildReels.Select(r => r + 1))}]");
+            }
+        }
+        Console.WriteLine($"[SpinHandler] lockedReelsForBoardCreation: {(lockedReelsForBoardCreation != null ? $"Count={lockedReelsForBoardCreation.Count}, Reels=[{string.Join(", ", lockedReelsForBoardCreation)}]" : "null")}");
+
         var board = ReelBoard.Create(
             reelStrips,
             configuration.SymbolMap,
             configuration.Board.Rows,
             multiplierFactory,
             randomContext.ReelStartSeeds,
-            _fortunaPrng);
+            _fortunaPrng,
+            lockedReelsForBoardCreation);
         Console.WriteLine("[SpinHandler] Board created");
+        
+        // IMPORTANT: Capture the initial grid BEFORE wild expansion for visual animation
+        // This allows the frontend to show the single wild falling, then animate expansion
+        var symbolMapper = configuration.SymbolIdMapper;
+        var initialGridCodes = board.FlattenCodes();
+        var initialGrid = symbolMapper.CodesToIds(initialGridCodes);
+        Console.WriteLine($"[SpinHandler] Captured initial grid (before wild expansion) for visual animation");
         
         // IMPORTANT: Detect wilds from INITIAL board state (before any expansions or cascades)
         // This ensures we only detect naturally occurring wilds, not ones we expanded
@@ -129,12 +156,26 @@ public sealed class SpinHandler
         // Handle wild expansion based on spin mode
         if (spinMode == SpinMode.Respin && nextState.Respins is not null && nextState.Respins.RespinsRemaining > 0)
         {
-            // STEP 1: During respin - expand previously locked wild reels (they don't re-spin)
-            // These were detected and locked in previous spins
+            // STEP 1: Locked wild reels were already preserved during board creation (they didn't spin)
+            // Verify they are still wilds as a safety check
             if (nextState.Respins.LockedWildReels.Count > 0)
             {
+                Console.WriteLine($"[SpinHandler] Respin mode - verifying locked reels: {string.Join(",", nextState.Respins.LockedWildReels.Select(r => r + 1))}");
+                // Check board state before verification
+                foreach (var lockedReel in nextState.Respins.LockedWildReels)
+                {
+                    var reelSymbols = board.GetReelSymbols(lockedReel);
+                    Console.WriteLine($"[SpinHandler] Board reel {lockedReel + 1} BEFORE verification: [{string.Join(", ", reelSymbols)}]");
+                }
                 LockWildReelsForRespin(board, nextState.Respins.LockedWildReels, configuration, multiplierFactory);
-                Console.WriteLine($"[SpinHandler] Locked {nextState.Respins.LockedWildReels.Count} wild reels during respin: {string.Join(",", nextState.Respins.LockedWildReels.Select(r => r + 1))}");
+                Console.WriteLine($"[SpinHandler] Verified {nextState.Respins.LockedWildReels.Count} locked wild reels during respin: {string.Join(",", nextState.Respins.LockedWildReels.Select(r => r + 1))}");
+                // Check board state after verification
+                foreach (var lockedReel in nextState.Respins.LockedWildReels)
+                {
+                    var reelSymbols = board.GetReelSymbols(lockedReel);
+                    var allWilds = reelSymbols.All(s => s == "WILD");
+                    Console.WriteLine($"[SpinHandler] Board reel {lockedReel + 1} AFTER verification: [{string.Join(", ", reelSymbols)}] - AllWilds: {allWilds}");
+                }
             }
             else
             {
@@ -142,7 +183,7 @@ public sealed class SpinHandler
             }
             
             // STEP 2: Detect NEW wilds that appeared on non-locked reels during this respin
-            // (The board was just created with only non-locked reels spinning)
+            // (The board was just created with only non-locked reels spinning, locked reels are already wilds)
             var wildReelsAfterSpin = DetectWildReels(board);
             var newWildReels = wildReelsAfterSpin
                 .Where(r => !nextState.Respins.LockedWildReels.Contains(r) && r >= 1 && r <= 3)
@@ -152,13 +193,18 @@ public sealed class SpinHandler
             if (newWildReels.Count > 0)
             {
                 Console.WriteLine($"[SpinHandler] New wild reels detected during respin: {string.Join(", ", newWildReels.Select(r => r + 1))}");
-                if (configuration.SymbolMap.TryGetValue("WILD", out var wildDef))
+                var wildDef = configuration.SymbolCatalog.FirstOrDefault(s => s.Code == "WILD");
+                if (wildDef != null)
                 {
                     foreach (var reelIndex in newWildReels)
                     {
                         board.ExpandReelToWild(reelIndex, wildDef, configuration.Board.Rows, multiplierFactory);
                         Console.WriteLine($"[SpinHandler] Expanded new wilds on reel {reelIndex + 1} during respin (before win evaluation)");
                     }
+                }
+                else
+                {
+                    Console.WriteLine($"[SpinHandler] ERROR: WILD symbol not found in symbol catalog!");
                 }
                 
                 // Award additional respins for new wilds (will be processed after win evaluation)
@@ -169,13 +215,18 @@ public sealed class SpinHandler
         {
             // Base game: expand naturally occurring wilds immediately (before win evaluation)
             // ONLY expand if we actually detected wilds in the initial board
-            if (configuration.SymbolMap.TryGetValue("WILD", out var wildDef))
+            var wildDef = configuration.SymbolCatalog.FirstOrDefault(s => s.Code == "WILD");
+            if (wildDef != null)
             {
                 foreach (var reelIndex in initialWildReels)
                 {
                     board.ExpandReelToWild(reelIndex, wildDef, configuration.Board.Rows, multiplierFactory);
                     Console.WriteLine($"[SpinHandler] Expanded initial wilds on reel {reelIndex + 1} (BaseGame mode)");
                 }
+            }
+            else
+            {
+                Console.WriteLine($"[SpinHandler] ERROR: WILD symbol not found in symbol catalog!");
             }
         }
         else if (spinMode == SpinMode.BaseGame && nextState.Respins is not null)
@@ -194,7 +245,6 @@ public sealed class SpinHandler
         Money scatterWin = Money.Zero; // Always zero - no scatter symbols
         Money featureWin = Money.Zero; // No free spins feature
         int freeSpinsAwarded = 0; // Always zero - no free spins
-        var symbolMapper = configuration.SymbolIdMapper;
 
         // Single win evaluation (no cascades)
         // IMPORTANT: All wild expansions have already happened above, so board state is final
@@ -223,12 +273,13 @@ public sealed class SpinHandler
         totalWin = finalWin;
 
         // Create a single "cascade" step for compatibility (even though there are no cascades)
-        // Grid is final after all wild expansions
+        // IMPORTANT: Use initialGrid (before expansion) as GridBefore, and finalGrid (after expansion) as GridAfter
+        // This allows the frontend to animate the wild expansion visually
         var finalGrid = symbolMapper.CodesToIds(gridCodes);
         cascades.Add(new CascadeStep(
             Index: 0,
-            GridBefore: finalGrid,
-            GridAfter: finalGrid, // Same grid - no changes in Starburst
+            GridBefore: initialGrid, // Grid BEFORE wild expansion (shows single wild)
+            GridAfter: finalGrid, // Grid AFTER wild expansion (shows expanded wilds)
             WinsAfterCascade: evaluation.SymbolWins,
             BaseWin: baseWin,
             AppliedMultiplier: appliedMultiplier,
@@ -292,12 +343,12 @@ public sealed class SpinHandler
         // Final grid is already set from the single evaluation (no cascades in Starburst)
         // All wild expansions happened before win evaluation, so gridCodes already has final state
         // Just verify and log the final grid
-        var finalGridCodes = board.FlattenCodes();
-        finalGrid = symbolMapper.CodesToIds(finalGridCodes);
+            var finalGridCodes = board.FlattenCodes();
+            finalGrid = symbolMapper.CodesToIds(finalGridCodes);
         
-        // Log grid in readable format (5 columns x 3 rows)
+        // Log grid in readable format (5 columns x 3 rows) - show both readable and ID format
         var spinTypeLabel = spinMode == SpinMode.Respin ? "RESPIN" : "BASE";
-        LogGridLayout(finalGrid, configuration, $"{spinTypeLabel} SPIN - RoundId: {roundId}", roundId);
+        LogGridLayout(finalGrid, configuration, $"{spinTypeLabel} SPIN - RoundId: {roundId}", roundId, wins);
         
         Console.WriteLine($"[SpinHandler] Final grid ready: {finalGrid.Count} symbols");
 
@@ -663,8 +714,12 @@ public sealed class SpinHandler
     {
         const string WILD_CODE = "WILD";
         
-        if (!configuration.SymbolMap.TryGetValue(WILD_CODE, out var wildDef))
+        // SymbolMap is keyed by Sym (e.g., "Sym1"), not Code (e.g., "WILD")
+        // So we need to search SymbolCatalog by Code instead
+        var wildDef = configuration.SymbolCatalog.FirstOrDefault(s => s.Code == WILD_CODE);
+        if (wildDef == null)
         {
+            Console.WriteLine($"[SpinHandler] ERROR: WILD symbol not found in symbol catalog!");
             return;
         }
         
@@ -678,13 +733,26 @@ public sealed class SpinHandler
                 continue;
             }
             
+            // Log before expansion
+            var reelSymbolsBefore = board.GetReelSymbols(reelIndex);
+            Console.WriteLine($"[SpinHandler] Before locking reel {reelIndex + 1}: [{string.Join(", ", reelSymbolsBefore)}]");
+            
             // Expand wilds to cover entire reel (all 3 rows)
             board.ExpandReelToWild(reelIndex, wildDef, configuration.Board.Rows, multiplierFactory);
-            Console.WriteLine($"[SpinHandler] Locked reel {reelIndex + 1} with expanded wilds");
+            
+            // Verify after expansion
+            var reelSymbolsAfter = board.GetReelSymbols(reelIndex);
+            var allWilds = reelSymbolsAfter.All(s => s == WILD_CODE);
+            Console.WriteLine($"[SpinHandler] After locking reel {reelIndex + 1}: [{string.Join(", ", reelSymbolsAfter)}] - All wilds: {allWilds}");
+            
+            if (!allWilds)
+            {
+                Console.WriteLine($"[SpinHandler] ERROR: Reel {reelIndex + 1} was not fully expanded to wilds!");
+            }
         }
     }
 
-    private void LogGridLayout(IReadOnlyList<int> gridSymbolIds, GameConfiguration configuration, string label, string? roundId = null)
+    private void LogGridLayout(IReadOnlyList<int> gridSymbolIds, GameConfiguration configuration, string label, string? roundId = null, IReadOnlyList<SymbolWin>? wins = null)
     {
         var cols = configuration.Board.Columns;
         var rows = configuration.Board.Rows;
@@ -703,11 +771,43 @@ public sealed class SpinHandler
             { "ORANGE", "ORANGE" }
         };
         
+        // Payline definitions for logging
+        var paylineDefinitions = new[]
+        {
+            new[] { 1, 1, 1, 1, 1 }, // Payline 1: Middle row
+            new[] { 0, 0, 0, 0, 0 }, // Payline 2: Top row
+            new[] { 2, 2, 2, 2, 2 }, // Payline 3: Bottom row
+            new[] { 0, 1, 2, 1, 0 }, // Payline 4: V-shape up
+            new[] { 2, 1, 0, 1, 2 }, // Payline 5: V-shape down
+            new[] { 0, 0, 1, 0, 0 }, // Payline 6: Top-center
+            new[] { 2, 2, 1, 2, 2 }, // Payline 7: Bottom-center
+            new[] { 1, 2, 2, 2, 1 }, // Payline 8: Bottom-heavy
+            new[] { 1, 0, 0, 0, 1 }, // Payline 9: Top-heavy
+            new[] { 1, 0, 1, 0, 1 }  // Payline 10: Alternating
+        };
+        
         Console.WriteLine($"\n[SpinHandler] ========== {label} ==========");
+        
+        // Log wins with payline information
+        if (wins != null && wins.Count > 0)
+        {
+            Console.WriteLine($"[SpinHandler] --- Wins ({wins.Count} total) ---");
+            foreach (var win in wins)
+            {
+                var paylineInfo = "";
+                if (win.PaylineId.HasValue && win.PaylineId.Value >= 1 && win.PaylineId.Value <= paylineDefinitions.Length)
+                {
+                    var paylineDef = paylineDefinitions[win.PaylineId.Value - 1];
+                    paylineInfo = $"Payline {win.PaylineId.Value} [{string.Join(",", paylineDef)}]";
+                }
+                Console.WriteLine($"[SpinHandler]   {win.SymbolCode} x{win.Count} = {win.Payout.Amount:F2} (Multiplier: {win.Multiplier}x) - {paylineInfo}");
+            }
+        }
         
         // Grid is flattened as: [row2col0, row2col1, ..., row2col4, row1col0, ..., row0col0, ...]
         // Where row2 is bottom, row1 is middle, row0 is top
-        // Display as rows from top to bottom (row0, row1, row2)
+        // Display as rows from top to bottom (row0, row1, row2) - READABLE FORMAT
+        Console.WriteLine($"[SpinHandler] --- Grid Layout (Readable Format) ---");
         for (int displayRow = rows - 1; displayRow >= 0; displayRow--) // Start from top (row 2 in 3-row grid)
         {
             var rowSymbols = new List<string>();
@@ -769,6 +869,28 @@ public sealed class SpinHandler
             Console.WriteLine($"[SpinHandler] REEL {col + 1}: [{string.Join(" | ", colSymbols)}]");
         }
         
+        // Also show ID format for reference
+        Console.WriteLine($"[SpinHandler] --- Grid Layout (ID Format) ---");
+        for (int displayRow = rows - 1; displayRow >= 0; displayRow--)
+        {
+            var rowSymbols = new List<string>();
+            for (int col = 0; col < cols; col++)
+            {
+                var flatIndex = displayRow * cols + col;
+                if (flatIndex < gridSymbolIds.Count)
+                {
+                    var symbolId = gridSymbolIds[flatIndex];
+                    rowSymbols.Add($"ID{symbolId}");
+                }
+                else
+                {
+                    rowSymbols.Add("EMPTY");
+                }
+            }
+            var rowLabel = displayRow == rows - 1 ? "TOP" : displayRow == 0 ? "BOT" : "MID";
+            Console.WriteLine($"[SpinHandler] {rowLabel} ROW: [{string.Join(" | ", rowSymbols)}]");
+        }
+        
         Console.WriteLine($"[SpinHandler] ============================================\n");
     }
 
@@ -789,11 +911,28 @@ public sealed class SpinHandler
             int rows,
             Func<SymbolDefinition, decimal> multiplierFactory,
             IReadOnlyList<int> reelStartSeeds,
-            FortunaPrng prng)
+            FortunaPrng prng,
+            IReadOnlySet<int>? lockedReels = null)
         {
             if (reelStrips.Count == 0)
             {
                 throw new InvalidOperationException("Reel strips are not configured.");
+            }
+
+            // Get WILD symbol definition if we need to preserve locked reels
+            // Note: SymbolMap is keyed by Sym (e.g., "Sym1"), not Code (e.g., "WILD")
+            // So we need to search SymbolCatalog by Code instead
+            SymbolDefinition? wildDef = null;
+            if (lockedReels != null && lockedReels.Count > 0)
+            {
+                // Find WILD by searching SymbolCatalog (which has Code property)
+                // We need to get it from the configuration, but we only have symbolMap here
+                // So we'll search through all symbols in the map to find one with Code == "WILD"
+                wildDef = symbolMap.Values.FirstOrDefault(s => s.Code == "WILD");
+                if (wildDef == null)
+                {
+                    Console.WriteLine($"[ReelBoard] WARNING: Locked reels specified but WILD symbol not found in symbol catalog!");
+                }
             }
 
             var columns = new List<ReelColumn>(reelStrips.Count);
@@ -805,10 +944,69 @@ public sealed class SpinHandler
                     throw new InvalidOperationException($"Reel {columnIndex} is empty.");
                 }
 
-                var startIndex = reelStartSeeds is not null && columnIndex < reelStartSeeds.Count
-                    ? Math.Abs(reelStartSeeds[columnIndex]) % strip.Count
-                    : prng.NextInt32(0, strip.Count);
-                columns.Add(new ReelColumn(strip, startIndex, rows, symbolMap, multiplierFactory));
+                // If this reel is locked, fill it with wilds instead of spinning
+                var isLocked = lockedReels != null && lockedReels.Contains(columnIndex);
+                var lockedReelsStr = lockedReels != null ? string.Join(",", lockedReels) : "null";
+                Console.WriteLine($"[ReelBoard] Processing reel {columnIndex + 1} (index {columnIndex}): isLocked={isLocked}, hasWildDef={wildDef != null}, lockedReels={lockedReelsStr}");
+                
+                if (isLocked && wildDef != null)
+                {
+                    Console.WriteLine($"[ReelBoard] Creating locked reel {columnIndex + 1} (index {columnIndex}) as wilds");
+                    // Create a column filled with wilds for locked reels
+                    // CRITICAL: symbolMap is keyed by Sym (e.g., "Sym1"), not Code (e.g., "WILD")
+                    // So we must use wildDef.Sym in the strip, not "WILD"
+                    var wildSym = wildDef.Sym; // e.g., "Sym1"
+                    var wildStrip = new List<string> { wildSym }; // Use Sym value, not Code
+                    var wildColumn = new ReelColumn(wildStrip, 0, rows, symbolMap, multiplierFactory);
+                    
+                    // CRITICAL: Replace ALL symbols with wilds to ensure they're correct
+                    // Even though the strip has the correct Sym, we explicitly set each symbol to be sure
+                    for (int row = 0; row < rows; row++)
+                    {
+                        if (row < wildColumn.Symbols.Count)
+                        {
+                            var multiplier = multiplierFactory(wildDef);
+                            wildColumn.Symbols[row] = new SymbolInstance(wildDef, multiplier);
+                        }
+                        else
+                        {
+                            // If somehow we don't have enough symbols, add them
+                            var multiplier = multiplierFactory(wildDef);
+                            wildColumn.Symbols.Add(new SymbolInstance(wildDef, multiplier));
+                        }
+                    }
+                    
+                    // Ensure we have exactly 'rows' symbols
+                    while (wildColumn.Symbols.Count < rows)
+                    {
+                        var multiplier = multiplierFactory(wildDef);
+                        wildColumn.Symbols.Add(new SymbolInstance(wildDef, multiplier));
+                    }
+                    
+                    columns.Add(wildColumn);
+                    
+                    // Verify it worked
+                    var verifySymbols = wildColumn.Symbols.Select(s => s.Definition.Code).ToList();
+                    var allWilds = verifySymbols.All(s => s == "WILD");
+                    var symbolCount = verifySymbols.Count;
+                    Console.WriteLine($"[ReelBoard] Preserved locked reel {columnIndex + 1} as wilds (skipped spinning) - SymbolCount: {symbolCount}, ExpectedRows: {rows}, Symbols: [{string.Join(", ", verifySymbols)}], AllWilds: {allWilds}");
+                    if (!allWilds || symbolCount != rows)
+                    {
+                        Console.WriteLine($"[ReelBoard] ERROR: Locked reel {columnIndex + 1} was not fully set to wilds! Expected {rows} wilds, got {symbolCount} symbols, allWilds={allWilds}");
+                    }
+                }
+                else
+                {
+                    if (isLocked && wildDef == null)
+                    {
+                        Console.WriteLine($"[ReelBoard] WARNING: Reel {columnIndex + 1} is locked but wildDef is null! Spinning normally (this is wrong!)");
+                    }
+                    // Normal reel - spin it
+                    var startIndex = reelStartSeeds is not null && columnIndex < reelStartSeeds.Count
+                        ? Math.Abs(reelStartSeeds[columnIndex]) % strip.Count
+                        : prng.NextInt32(0, strip.Count);
+                    columns.Add(new ReelColumn(strip, startIndex, rows, symbolMap, multiplierFactory));
+                }
             }
 
             return new ReelBoard(columns, rows);

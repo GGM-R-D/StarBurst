@@ -44,6 +44,10 @@ public sealed class GameLogger
 
     public static void LogPlayRequest(string sessionId, string roundId, decimal bet, string betMode, bool isRespin, int? respinsRemaining)
     {
+        WriteLine();
+        WriteLine("=".PadRight(100, '='));
+        WriteLine($"SPIN BUTTON PRESSED - {(isRespin ? "RESPIN" : "BASE SPIN")}");
+        WriteLine("=".PadRight(100, '='));
         WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] [PLAY_REQUEST]");
         WriteLine($"  SessionId: {sessionId}");
         WriteLine($"  RoundId: {roundId}");
@@ -57,7 +61,7 @@ public sealed class GameLogger
         WriteLine();
     }
 
-    public static void LogEngineResponse(string roundId, decimal win, int? respinsRemaining, bool featureEnded, string gridLayout)
+    public static void LogEngineResponse(string roundId, decimal win, int? respinsRemaining, bool featureEnded, string gridLayout, string? winsInfo = null)
     {
         WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] [ENGINE_RESPONSE]");
         WriteLine($"  RoundId: {roundId}");
@@ -68,6 +72,11 @@ public sealed class GameLogger
             WriteLine($"  FeatureEnded: {respinsRemaining.Value == 0}");
         }
         WriteLine($"  FeatureEnded: {featureEnded}");
+        if (!string.IsNullOrEmpty(winsInfo))
+        {
+            WriteLine($"  Wins:");
+            WriteLine(winsInfo);
+        }
         WriteLine($"  GridLayout:");
         WriteLine(gridLayout);
         WriteLine();
