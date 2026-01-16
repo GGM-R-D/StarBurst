@@ -215,9 +215,9 @@ app.MapPost("/{operatorId}/{gameId}/play",
             var prevBalance = session.Balance;
             
             // Check if this is a respin - respins should be FREE (no bet deduction)
-            // A respin is when the previous state had respins remaining, or the current response indicates respin mode
-            var isRespin = isRespinBeforeSpin || 
-                          (engineResponse.NextState.Respins is not null && engineResponse.NextState.Respins.RespinsRemaining >= 0);
+            // A respin is ONLY when the previous state had respins remaining (before the spin)
+            // Base spins that trigger the feature are NOT respins - they still cost the bet
+            var isRespin = isRespinBeforeSpin;
             var betToDeduct = isRespin ? 0m : totalBet.Amount;
             
             // Update balance: deduct bet (0 for respins), add win
@@ -267,7 +267,7 @@ app.MapPost("/{operatorId}/{gameId}/play",
                 sessionId: session.SessionId,
                 prevBalance: prevBalance,
                 balance: balance,
-                bet: totalBet.Amount,
+                bet: betToDeduct, // Use betToDeduct (0 for respins, actual bet for base spins)
                 currencyId: currencyId,
                 maxWinCap: maxWinCap);
 

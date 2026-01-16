@@ -89,3 +89,13 @@ The backend expanding wild and respin logic needs verification:
 - ❌ Paylines configuration missing
 - ⚠️ Wild expansion/respin logic needs verification
 
+
+
+Base spin animation completes
+Wilds expand visually
+Base spin wins display (with expanded wilds)
+Win animations complete
+Respin loop starts
+Respin wins display
+Repeat until feature ends
+

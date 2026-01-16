@@ -1100,8 +1100,24 @@ export class GameApp extends GameStateMachine {
     // Wins come from backend - no local calculation
     // For BOTH base spins and respins: always wait for win animations to finish
     try {
+      // Check if this is a base spin (not a respin) by checking if we're not yet in respin feature
+      const isBaseSpin = !this.inRespinFeature;
+      
+      console.info('[GameApp] About to evaluate wins. Is base spin:', isBaseSpin, 'Wins available:', !!this.currentBackendWins, 'Win count:', this.currentBackendWins?.length || 0);
+      
       await this.evaluateAndApplyWins(grid);
       console.info('[GameApp] Win display completed (base or respin), safe to continue');
+      
+      // CRITICAL: For base spins that trigger respins, add a delay to ensure
+      // win animations are fully visible before respin loop starts
+      // The respin loop will clear wins, so we need to make sure base wins are seen first
+      if (isBaseSpin && this.inRespinFeature && this.pendingRespins > 0) {
+        console.info('[GameApp] Base spin wins displayed, adding delay before respin loop can start...');
+        // Give extra time for base spin win animations to be visible
+        // The payline cycling should already be complete from evaluateAndApplyWins
+        await new Promise<void>((resolve) => setTimeout(resolve, 1500));
+        console.info('[GameApp] Delay complete, respin loop can now start');
+      }
     } catch (err) {
       console.error('[GameApp] Error displaying wins:', err);
     }
@@ -2182,10 +2198,13 @@ export class GameApp extends GameStateMachine {
       const wins = this.currentBackendWins || [];
       const totalWin = this.currentBackendTotalWin ?? wins.reduce((sum: number, w) => sum + w.payout, 0);
       
+      console.info('[GameApp] ===== EVALUATING WINS =====');
+      console.info('[GameApp] Is respin:', this.inRespinFeature);
       console.info('[GameApp] Using backend wins (no local calculation):', wins.length, wins.map(w => 
         `Line ${w.lineId}: ${w.symbol} x${w.count} = ${w.payout.toFixed(2)}`
       ).join(', '));
       console.info('[GameApp] Total win from backend:', totalWin);
+      console.info('[GameApp] Will display wins:', totalWin > 0 && wins.length > 0);
       
       // Clear backend wins after use
       this.currentBackendWins = undefined;
@@ -2203,7 +2222,11 @@ export class GameApp extends GameStateMachine {
       }
 
       // Show win panel if there's a win
-      if (totalWin > 0) {
+      if (totalWin > 0 && wins.length > 0) {
+        console.info('[GameApp] ===== DISPLAYING WINS =====');
+        console.info('[GameApp] Showing win panel with total:', totalWin);
+        console.info('[GameApp] Win count:', wins.length);
+        
         // Play win sound immediately when wins are detected (big-win for large wins)
         // Use a small delay to ensure sounds are ready after spin animation
         setTimeout(() => {
@@ -2221,6 +2244,7 @@ export class GameApp extends GameStateMachine {
         }, 100);
         
         // Show total win in win box immediately (Starburst style)
+        console.info('[GameApp] Calling winPanel.showWin with:', totalWin);
         this.winPanel.showWin(totalWin);
         this.bottomBar.setWin(totalWin);
         
@@ -2228,6 +2252,7 @@ export class GameApp extends GameStateMachine {
         // Check for cancellation before starting payline cycle
         if (this.isWinAnimating) { // Check if still animating (not cancelled)
           const isRespin = this.inRespinFeature;
+          console.info('[GameApp] Starting payline cycle. Is respin:', isRespin);
           
           if (isRespin) {
             // During respins: cycle through paylines quickly
@@ -2238,10 +2263,16 @@ export class GameApp extends GameStateMachine {
             }
           } else {
             // Base spin: cycle through paylines with normal timing
+            console.info('[GameApp] Cycling through paylines for BASE SPIN');
             await this.paylineView.cycleThroughPaylines(wins, undefined, this.isAutoSpinning);
+            console.info('[GameApp] Payline cycle completed for BASE SPIN');
           }
+        } else {
+          console.warn('[GameApp] Win animation was cancelled, skipping payline cycle');
         }
+        console.info('[GameApp] ===== WIN DISPLAY COMPLETE =====');
       } else {
+        console.info('[GameApp] No wins to display (totalWin:', totalWin, 'wins.length:', wins.length, ')');
         this.winPanel.hideWin();
         this.bottomBar.setWin(0);
         this.paylineIndicators.clearHighlights();
