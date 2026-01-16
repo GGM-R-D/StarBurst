@@ -100,11 +100,11 @@ app.MapPost("/{operatorId}/{gameId}/start",
                 balance: session.Balance, // Use session balance
                 clientType: request.Client ?? "desktop",
                 clientIp: clientIp,
-                countryCode: "US", // TODO: Get from geo-location
-                countryName: "United States",
-                currencySymbol: "$",
-                currencyIsoCode: "USD",
-                currencyName: "US Dollar",
+                countryCode: "RSA", // TODO: Get from geo-location
+                countryName: "South Africa",
+                currencySymbol: "R",
+                currencyIsoCode: "ZAR",
+                currencyName: "South African Rand",
                 decimalSeparator: ".",
                 thousandSeparator: ",",
                 currencyDecimals: 2,
@@ -227,7 +227,7 @@ app.MapPost("/{operatorId}/{gameId}/play",
             var balance = session.Balance;
             
             var maxWinCap = 0m; // TODO: Get from game configuration
-            var currencyId = "USD"; // TODO: Get from session/player
+            var currencyId = "ZAR"; // TODO: Get from session/player
             
             logger.LogInformation("Balance updated: PrevBalance={PrevBalance}, Bet={Bet}, Win={Win}, NewBalance={NewBalance}, IsRespin={IsRespin}", 
                 prevBalance, betToDeduct, engineResponse.Win.Amount, balance, isRespin);
