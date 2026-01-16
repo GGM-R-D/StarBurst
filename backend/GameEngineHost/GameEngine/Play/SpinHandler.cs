@@ -149,6 +149,10 @@ public sealed class SpinHandler
             Console.WriteLine($"[SpinHandler] No initial wild reels detected (before expansions)");
         }
         
+        // Capture initial expanding wilds information (before expansion) for feature state
+        // This captures which reels have wilds and which rows they appear on
+        var initialExpandingWilds = DetectExpandingWilds(board, initialWildReels);
+        
         // Starburst: Wilds can appear on reels 2, 3, 4 (indices 1, 2, 3)
         // Multiple wild reels are allowed - each awards a respin (max 3 respins)
         // During respins, wild reels are locked and only non-locked reels re-spin
@@ -360,13 +364,66 @@ public sealed class SpinHandler
         // Determine feature outcome if feature is active
         // Note: Only respin feature exists in Starburst (no free spins)
         FeatureOutcome? featureOutcome = null;
-        if (nextState.Respins is not null && nextState.Respins.RespinsRemaining > 0)
+        if (nextState.Respins is not null)
         {
+            var isActive = nextState.Respins.RespinsRemaining > 0;
             var isClosure = nextState.Respins.RespinsRemaining == 0 ? 1 : 0;
+            
+            // Get all wild reels (locked + newly detected)
+            var allWildReels = new List<int>();
+            if (nextState.Respins.LockedWildReels != null && nextState.Respins.LockedWildReels.Count > 0)
+            {
+                allWildReels.AddRange(nextState.Respins.LockedWildReels);
+            }
+            // Also include newly detected wilds if any (for base game trigger)
+            if (initialWildReels.Count > 0)
+            {
+                foreach (var reel in initialWildReels)
+                {
+                    if (!allWildReels.Contains(reel))
+                    {
+                        allWildReels.Add(reel);
+                    }
+                }
+            }
+            
+            // Get expanding wilds information
+            // For locked reels (already expanded), report all rows [0,1,2]
+            // For newly detected wilds, use the initial expanding wilds info we captured
+            var expandingWilds = new List<ExpandingWildInfo>();
+            
+            // Add locked reels (already expanded, so all rows are wild)
+            if (nextState.Respins.LockedWildReels != null)
+            {
+                foreach (var lockedReel in nextState.Respins.LockedWildReels)
+                {
+                    expandingWilds.Add(new ExpandingWildInfo(
+                        Reel: lockedReel,
+                        Rows: new List<int> { 0, 1, 2 })); // All rows are wild after expansion
+                }
+            }
+            
+            // Add newly detected wilds with their initial row positions
+            // These are wilds that appeared this spin but aren't locked yet
+            foreach (var expandingWild in initialExpandingWilds)
+            {
+                // Only add if this reel is not already locked (newly detected this spin)
+                if (nextState.Respins.LockedWildReels == null || 
+                    !nextState.Respins.LockedWildReels.Contains(expandingWild.Reel))
+                {
+                    expandingWilds.Add(expandingWild);
+                }
+            }
+            
             featureOutcome = new FeatureOutcome(
-                Type: "BONUS_GAME",
+                Type: "EXPANDING_WILDS",
                 IsClosure: isClosure,
-                Name: "Starburst Wilds");
+                Name: "Starburst Wilds",
+                Active: isActive,
+                RespinsAwarded: nextState.Respins.TotalRespinsAwarded,
+                RespinsRemaining: nextState.Respins.RespinsRemaining,
+                LockedReels: nextState.Respins.LockedWildReels?.ToList() ?? new List<int>(),
+                ExpandingWilds: expandingWilds);
         }
         else if (request.IsFeatureBuy)
         {
@@ -640,6 +697,41 @@ public sealed class SpinHandler
         }
         
         return wildReels;
+    }
+
+    /// <summary>
+    /// Detects expanding wilds with row information from the board.
+    /// Returns information about which reels have wilds and which rows they appear on.
+    /// </summary>
+    private static List<ExpandingWildInfo> DetectExpandingWilds(ReelBoard board, IReadOnlyList<int> wildReels)
+    {
+        const string WILD_CODE = "WILD";
+        var expandingWilds = new List<ExpandingWildInfo>();
+        
+        foreach (var reelIndex in wildReels)
+        {
+            if (reelIndex < 0 || reelIndex >= board.ColumnCount) continue;
+            
+            var reelSymbols = board.GetReelSymbols(reelIndex);
+            var wildRows = new List<int>();
+            
+            // Find which rows have wilds (before expansion)
+            for (int row = 0; row < reelSymbols.Count; row++)
+            {
+                if (reelSymbols[row] == WILD_CODE)
+                {
+                    wildRows.Add(row);
+                }
+            }
+            
+            if (wildRows.Count > 0)
+            {
+                expandingWilds.Add(new ExpandingWildInfo(Reel: reelIndex, Rows: wildRows));
+                Console.WriteLine($"[SpinHandler] Expanding wild on reel {reelIndex + 1} at rows: {string.Join(", ", wildRows)}");
+            }
+        }
+        
+        return expandingWilds;
     }
 
     /// <summary>

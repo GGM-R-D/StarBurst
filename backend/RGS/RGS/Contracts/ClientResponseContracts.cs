@@ -143,10 +143,27 @@ public sealed record ClientPlayPromoFreeSpins(
     decimal TotalWin,
     decimal TotalBet);
 
+/// <summary>
+/// Information about an expanding wild on a specific reel for client response.
+/// </summary>
+public sealed record ClientExpandingWildInfo(
+    int Reel, // Reel index (0-based: 1,2,3 = reels 2,3,4)
+    IReadOnlyList<int> Rows); // Row indices (0-based: 0,1,2 = top, middle, bottom)
+
+/// <summary>
+/// Feature information in client response.
+/// Extended for Starburst expanding wilds feature.
+/// </summary>
 public sealed record ClientPlayFeature(
     string Name,
     string Type,
-    int IsClosure);
+    int IsClosure,
+    // Extended fields for expanding wilds feature
+    bool? Active = null,
+    int? RespinsAwarded = null,
+    int? RespinsRemaining = null,
+    IReadOnlyList<int>? LockedReels = null,
+    IReadOnlyList<ClientExpandingWildInfo>? ExpandingWilds = null);
 
 public sealed record ClientBalanceResponse(
     int StatusCode,

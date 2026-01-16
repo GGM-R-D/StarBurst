@@ -74,11 +74,25 @@ public enum BetMode
 }
 
 /// <summary>
+/// Information about an expanding wild on a specific reel.
+/// </summary>
+public sealed record ExpandingWildInfo(
+    int Reel, // Reel index (0-based: 1,2,3 = reels 2,3,4)
+    IReadOnlyList<int> Rows); // Row indices (0-based: 0,1,2 = top, middle, bottom) where wilds appear before expansion
+
+/// <summary>
 /// Feature outcome returned when a game feature is triggered.
 /// Per RGS-Game server specification: type and isClosure are mandatory, name is optional.
+/// Extended for Starburst expanding wilds feature.
 /// </summary>
 public sealed record FeatureOutcome(
-    string Type, // Feature type (e.g., "BONUS_GAME", "GAMBLE_GAME", "FREESPINS")
+    string Type, // Feature type (e.g., "BONUS_GAME", "GAMBLE_GAME", "FREESPINS", "EXPANDING_WILDS")
     int IsClosure, // 1 if last round of feature, 0 otherwise
-    string? Name = null); // Optional feature name
+    string? Name = null, // Optional feature name
+    // Extended fields for expanding wilds feature
+    bool? Active = null, // Whether the feature is currently active
+    int? RespinsAwarded = null, // Total respins awarded
+    int? RespinsRemaining = null, // Respins remaining
+    IReadOnlyList<int>? LockedReels = null, // Locked reel indices (0-based: 1,2,3 = reels 2,3,4)
+    IReadOnlyList<ExpandingWildInfo>? ExpandingWilds = null); // Expanding wilds with row information
 

@@ -79,18 +79,50 @@ public static class ResponseTransformer
         var respins = engineResponse.NextState.Respins; // Get respin state from backend
         var maxWinAchieved = engineResponse.Win.Amount >= maxWinCap && maxWinCap > 0;
         
-        // Determine feature info - check respins first (Starburst uses respins, not free spins)
+        // Determine feature info - use FeatureOutcome from engine if available, otherwise build from state
         var featureName = "";
         var featureType = "";
         var featureIsClosure = 0;
         
+        // Use FeatureOutcome from engine response if available (includes all extended fields)
+        if (engineResponse.Feature is not null)
+        {
+            featureName = engineResponse.Feature.Name ?? "";
+            featureType = engineResponse.Feature.Type;
+            featureIsClosure = engineResponse.Feature.IsClosure;
+        }
+        else
+        {
+            // Fallback: build from state (for backward compatibility)
+            if (respins is not null && respins.RespinsRemaining > 0)
+            {
+                featureName = "Starburst Wilds";
+                featureType = "BONUS_GAME";
+                featureIsClosure = 0;
+            }
+            else if (respins is not null && respins.RespinsRemaining == 0)
+            {
+                featureName = "Starburst Wilds";
+                featureType = "BONUS_GAME";
+                featureIsClosure = 1;
+            }
+            else if (freeSpins is not null && freeSpins.SpinsRemaining > 0)
+            {
+                featureName = "FREESPINS";
+                featureType = "FREESPINS";
+                featureIsClosure = 0;
+            }
+            else if (freeSpins is not null && freeSpins.SpinsRemaining == 0)
+            {
+                featureName = "FREESPINS";
+                featureType = "FREESPINS";
+                featureIsClosure = 1;
+            }
+        }
+        
+        // Log wild feature if respins are active
         if (respins is not null && respins.RespinsRemaining > 0)
         {
-            featureName = "Starburst Wilds";
-            featureType = "BONUS_GAME";
-            featureIsClosure = 0;
-            
-            // Log wild feature
             var lockedReelsStr = respins.LockedWildReels != null && respins.LockedWildReels.Count > 0
                 ? string.Join(",", respins.LockedWildReels.Select(r => r + 1))
                 : "none";
@@ -100,25 +132,6 @@ public static class ResponseTransformer
                 1, // Respins awarded (1 per wild reel)
                 respins.RespinsRemaining,
                 lockedReelsStr);
-        }
-        else if (respins is not null && respins.RespinsRemaining == 0)
-        {
-            // Feature just ended
-            featureName = "Starburst Wilds";
-            featureType = "BONUS_GAME";
-            featureIsClosure = 1;
-        }
-        else if (freeSpins is not null && freeSpins.SpinsRemaining > 0)
-        {
-            featureName = "FREESPINS";
-            featureType = "FREESPINS";
-            featureIsClosure = 0;
-        }
-        else if (freeSpins is not null && freeSpins.SpinsRemaining == 0)
-        {
-            featureName = "FREESPINS";
-            featureType = "FREESPINS";
-            featureIsClosure = 1;
         }
 
         return new ClientPlayResponse(
@@ -155,7 +168,16 @@ public static class ResponseTransformer
             Feature: new ClientPlayFeature(
                 Name: featureName,
                 Type: featureType,
-                IsClosure: featureIsClosure));
+                IsClosure: featureIsClosure,
+                // Populate extended fields from engineResponse.Feature
+                Active: engineResponse.Feature?.Active,
+                RespinsAwarded: engineResponse.Feature?.RespinsAwarded,
+                RespinsRemaining: engineResponse.Feature?.RespinsRemaining,
+                LockedReels: engineResponse.Feature?.LockedReels,
+                ExpandingWilds: engineResponse.Feature?.ExpandingWilds?.Select(ew => 
+                    new ClientExpandingWildInfo(
+                        Reel: ew.Reel,
+                        Rows: ew.Rows)).ToList()));
     }
 }
 
