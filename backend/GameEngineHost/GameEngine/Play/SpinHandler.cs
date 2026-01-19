@@ -423,7 +423,8 @@ public sealed class SpinHandler
                 RespinsAwarded: nextState.Respins.TotalRespinsAwarded,
                 RespinsRemaining: nextState.Respins.RespinsRemaining,
                 LockedReels: nextState.Respins.LockedWildReels?.ToList() ?? new List<int>(),
-                ExpandingWilds: expandingWilds);
+                ExpandingWilds: expandingWilds,
+                InitialGrid: initialGrid); // Initial grid before wild expansion (for frontend animation)
         }
         else if (request.IsFeatureBuy)
         {

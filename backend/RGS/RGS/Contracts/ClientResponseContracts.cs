@@ -163,7 +163,8 @@ public sealed record ClientPlayFeature(
     int? RespinsAwarded = null,
     int? RespinsRemaining = null,
     IReadOnlyList<int>? LockedReels = null,
-    IReadOnlyList<ClientExpandingWildInfo>? ExpandingWilds = null);
+    IReadOnlyList<ClientExpandingWildInfo>? ExpandingWilds = null,
+    IReadOnlyList<int>? InitialGrid = null); // Initial grid state before wild expansion (for frontend animation)
 
 public sealed record ClientBalanceResponse(
     int StatusCode,

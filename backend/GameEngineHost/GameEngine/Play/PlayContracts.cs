@@ -94,5 +94,6 @@ public sealed record FeatureOutcome(
     int? RespinsAwarded = null, // Total respins awarded
     int? RespinsRemaining = null, // Respins remaining
     IReadOnlyList<int>? LockedReels = null, // Locked reel indices (0-based: 1,2,3 = reels 2,3,4)
-    IReadOnlyList<ExpandingWildInfo>? ExpandingWilds = null); // Expanding wilds with row information
+    IReadOnlyList<ExpandingWildInfo>? ExpandingWilds = null, // Expanding wilds with row information
+    IReadOnlyList<int>? InitialGrid = null); // Initial grid state before wild expansion (for frontend animation)
 

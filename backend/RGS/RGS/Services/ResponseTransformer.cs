@@ -177,7 +177,8 @@ public static class ResponseTransformer
                 ExpandingWilds: engineResponse.Feature?.ExpandingWilds?.Select(ew => 
                     new ClientExpandingWildInfo(
                         Reel: ew.Reel,
-                        Rows: ew.Rows)).ToList()));
+                        Rows: ew.Rows)).ToList(),
+                InitialGrid: engineResponse.Feature?.InitialGrid)); // Initial grid before wild expansion (for frontend animation)
     }
 }
 
