@@ -6,6 +6,7 @@ using GameEngine.Services;
 using Microsoft.AspNetCore.Http.Json;
 using RGS.Contracts;
 using RGS.Services;
+using RGS;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -64,14 +65,18 @@ app.MapPost("/{operatorId}/{gameId}/start",
         {
             if (request is null)
             {
-                return Results.BadRequest("Request payload is required.");
+                return Results.Json(new { statusCode = ErrorCodes.BadRequest, message = ErrorCodes.GetMessage(ErrorCodes.BadRequest) }, statusCode: 200);
             }
 
             var funMode = request.FunMode == 1;
             if (!funMode && string.IsNullOrWhiteSpace(request.Token))
             {
-                return Results.BadRequest("token is required when funMode=0.");
+                return Results.Json(new { statusCode = ErrorCodes.BadRequest, message = "token is required when funMode=0." }, statusCode: 200);
             }
+            
+            // Handle currencyId if provided (optional, only used if funMode=1 and no default currency)
+            // For now, we'll use the default currency from configuration
+            // TODO: Implement currency selection logic based on currencyId parameter
 
             // Create session with initial balance (default 10000, or from player service in production)
             var initialBalance = 10000m; // TODO: Get from player service using request.Token
@@ -127,27 +132,27 @@ app.MapPost("/{operatorId}/{gameId}/play",
         {
             if (request is null)
             {
-                return Results.BadRequest("Request payload is required.");
+                return Results.Json(new { statusCode = ErrorCodes.BadRequest, message = ErrorCodes.GetMessage(ErrorCodes.BadRequest) }, statusCode: 200);
             }
 
             if (!sessions.TryGetSession(request.SessionId, out var session))
             {
-                return Results.Unauthorized();
+                return Results.Json(new { statusCode = ErrorCodes.Unauthorized, message = ErrorCodes.GetMessage(ErrorCodes.Unauthorized) }, statusCode: 200);
             }
 
             if (!string.Equals(session.GameId, gameId, StringComparison.OrdinalIgnoreCase))
             {
-                return Results.BadRequest("Session does not match game.");
+                return Results.Json(new { statusCode = ErrorCodes.BadRequest, message = "Session does not match game." }, statusCode: 200);
             }
 
             if (!TryParseBetMode(request.BetMode, out var betMode))
             {
-                return Results.BadRequest("Unknown betMode.");
+                return Results.Json(new { statusCode = ErrorCodes.BadRequest, message = "Unknown betMode." }, statusCode: 200);
             }
 
             if (request.Bets is null || request.Bets.Count == 0)
             {
-                return Results.BadRequest("bets array is required.");
+                return Results.Json(new { statusCode = ErrorCodes.BadRequest, message = "bets array is required." }, statusCode: 200);
             }
 
             Money baseBet;
@@ -157,14 +162,14 @@ app.MapPost("/{operatorId}/{gameId}/play",
             }
             catch (Exception ex)
             {
-                return Results.BadRequest($"Invalid baseBet value: {ex.Message}");
+                return Results.Json(new { statusCode = ErrorCodes.BadRequest, message = $"Invalid baseBet value: {ex.Message}" }, statusCode: 200);
             }
 
             var totalBet = CalculateTotalBet(baseBet, betMode);
 
             if (totalBet.Amount <= 0)
             {
-                return Results.BadRequest("Total bet must be positive.");
+                return Results.Json(new { statusCode = ErrorCodes.BadRequest, message = "Total bet must be positive." }, statusCode: 200);
             }
 
             List<BetRequest> betRequests;
@@ -174,7 +179,7 @@ app.MapPost("/{operatorId}/{gameId}/play",
             }
             catch (ArgumentException ex)
             {
-                return Results.BadRequest(ex.Message);
+                return Results.Json(new { statusCode = ErrorCodes.BadRequest, message = ex.Message }, statusCode: 200);
             }
 
             var engineRequest = new PlayRequest(
@@ -293,27 +298,27 @@ app.MapPost("/{gameId}/buy-free-spins",
         {
             if (request is null)
             {
-                return Results.BadRequest("Request payload is required.");
+                return Results.Json(new { statusCode = ErrorCodes.BadRequest, message = ErrorCodes.GetMessage(ErrorCodes.BadRequest) }, statusCode: 200);
             }
 
             if (!sessions.TryGetSession(request.SessionId, out var session))
             {
-                return Results.Unauthorized();
+                return Results.Json(new { statusCode = ErrorCodes.Unauthorized, message = ErrorCodes.GetMessage(ErrorCodes.Unauthorized) }, statusCode: 200);
             }
 
             if (!string.Equals(session.GameId, gameId, StringComparison.OrdinalIgnoreCase))
             {
-                return Results.BadRequest("Session does not match game.");
+                return Results.Json(new { statusCode = ErrorCodes.BadRequest, message = "Session does not match game." }, statusCode: 200);
             }
 
             if (!TryParseBetMode(request.BetMode, out var betMode))
             {
-                return Results.BadRequest("Unknown betMode.");
+                return Results.Json(new { statusCode = ErrorCodes.BadRequest, message = "Unknown betMode." }, statusCode: 200);
             }
 
             if (betMode != BetMode.Standard)
             {
-                return Results.BadRequest("ANTE_MODE_BUY_NOT_ALLOWED");
+                return Results.Json(new { statusCode = ErrorCodes.BadRequest, message = "ANTE_MODE_BUY_NOT_ALLOWED" }, statusCode: 200);
             }
 
             Money baseBet;
@@ -323,13 +328,13 @@ app.MapPost("/{gameId}/buy-free-spins",
             }
             catch (Exception ex)
             {
-                return Results.BadRequest($"Invalid baseBet value: {ex.Message}");
+                return Results.Json(new { statusCode = ErrorCodes.BadRequest, message = $"Invalid baseBet value: {ex.Message}" }, statusCode: 200);
             }
 
             var totalBet = CalculateTotalBet(baseBet, betMode);
             if (totalBet.Amount <= 0)
             {
-                return Results.BadRequest("Total bet must be positive.");
+                return Results.Json(new { statusCode = ErrorCodes.BadRequest, message = "Total bet must be positive." }, statusCode: 200);
             }
 
             List<BetRequest> betRequests;
@@ -341,7 +346,7 @@ app.MapPost("/{gameId}/buy-free-spins",
             }
             catch (ArgumentException ex)
             {
-                return Results.BadRequest(ex.Message);
+                return Results.Json(new { statusCode = ErrorCodes.BadRequest, message = ex.Message }, statusCode: 200);
             }
 
             var engineRequest = new PlayRequest(
@@ -380,12 +385,12 @@ app.MapPost("/{operatorId}/player/balance",
         {
             if (request is null)
             {
-                return Results.BadRequest("Request payload is required.");
+                return Results.Json(new { statusCode = ErrorCodes.BadRequest, message = ErrorCodes.GetMessage(ErrorCodes.BadRequest) }, statusCode: 200);
             }
 
             if (string.IsNullOrWhiteSpace(request.PlayerId))
             {
-                return Results.BadRequest("playerId is required.");
+                return Results.Json(new { statusCode = ErrorCodes.BadRequest, message = "playerId is required." }, statusCode: 200);
             }
 
             // TODO: Get actual balance from player service/database
@@ -393,8 +398,8 @@ app.MapPost("/{operatorId}/player/balance",
             var balance = 10000m; // TODO: Get from player service using request.PlayerId
             
             var response = new ClientBalanceResponse(
-                StatusCode: 8000,
-                Message: "Request processed successfully",
+                StatusCode: ErrorCodes.BalanceOK,
+                Message: ErrorCodes.GetMessage(ErrorCodes.BalanceOK),
                 Balance: balance);
 
             return Results.Ok(response);

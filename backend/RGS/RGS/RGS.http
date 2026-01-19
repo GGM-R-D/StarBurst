@@ -32,4 +32,20 @@ Content-Type: application/json
   "betMode": "standard"
 }
 
+### Balance Request
+POST {{RGS_HostAddress}}/TEST/player/balance
+Content-Type: application/json
+
+{
+  "playerId": "8bb5289dc906b0420c0d977480acc38d"
+}
+
+### Balance Request (Alternative - using session token)
+POST {{RGS_HostAddress}}/TEST/player/balance
+Content-Type: application/json
+
+{
+  "playerId": "demo-token"
+}
+
 ###

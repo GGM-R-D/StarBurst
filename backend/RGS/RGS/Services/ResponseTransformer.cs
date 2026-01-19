@@ -1,6 +1,7 @@
 using System.Linq;
 using GameEngine.Play;
 using RGS.Contracts;
+using RGS;
 
 namespace RGS.Services;
 
@@ -26,8 +27,8 @@ public static class ResponseTransformer
         decimal maxWinCap)
     {
         return new ClientStartResponse(
-            StatusCode: 6000,
-            Message: "Request processed successfully",
+            StatusCode: ErrorCodes.OK,
+            Message: ErrorCodes.GetMessage(ErrorCodes.OK),
             Player: new ClientPlayer(
                 SessionId: internalResponse.SessionId,
                 Id: playerId,
@@ -135,8 +136,8 @@ public static class ResponseTransformer
         }
 
         return new ClientPlayResponse(
-            StatusCode: 6000,
-            Message: "Request processed successfully",
+            StatusCode: ErrorCodes.OK,
+            Message: ErrorCodes.GetMessage(ErrorCodes.OK),
             Player: new ClientPlayPlayer(
                 SessionId: sessionId,
                 RoundId: engineResponse.RoundId,

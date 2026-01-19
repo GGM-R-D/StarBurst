@@ -19,13 +19,13 @@
 ### Backend
 1. **Paytable** (`backend/GameEngineHost/configs/starburst.json`)
    - ✅ Updated to Starburst math:
-     - BAR: 3→10, 4→25, 5→50
-     - SEVEN: 3→5, 4→12, 5→25
-     - ORANGE: 3→2, 4→5, 5→12
-     - GREEN: 3→1.6, 4→4, 5→10
-     - RED: 3→1.4, 4→3, 5→8
-     - BLUE: 3→1, 4→2, 5→5
-     - PURPLE: 3→1, 4→2, 5→5
+     - BAR: 3→50, 4→200, 5→250
+     - SEVEN: 3→25, 4→60, 5→120
+     - ORANGE: 3→10, 4→25, 5→60
+     - GREEN: 3→8, 4→20, 5→50
+     - RED: 3→7, 4→15, 5→40
+     - BLUE: 3→5, 4→10, 5→25
+     - PURPLE: 3→5, 4→10, 5→25
      - WILD: No direct payout (substitute only)
 
 2. **Reel Strips** (`backend/GameEngineHost/configs/starburstReelsets.json`)
@@ -36,44 +36,31 @@
      - `reelsetFreeSpins`: Reels 0 and 4 exclude Sym1
    - ✅ Reels 1, 2, 3 (indices 1, 2, 3) can contain Sym1 (WILD)
 
+## ✅ Completed Changes (Backend Continued)
+
+3. **WinEvaluator** (`backend/GameEngineHost/GameEngine/Play/WinEvaluator.cs`)
+   - ✅ Uses 10 fixed paylines (hardcoded in class)
+   - ✅ Evaluates each payline in both directions (left-to-right and right-to-left)
+   - ✅ Pays highest win per payline
+   - ✅ Sums wins across different paylines
+   - ✅ Wild substitution logic implemented correctly
+   - ✅ Paytable lookup with best multiplier selection
+
+4. **Wild Expansion & Respin Logic** (`backend/GameEngineHost/GameEngine/Play/SpinHandler.cs`)
+   - ✅ Wild expansion only triggers on reels 2-4 (indices 1, 2, 3)
+   - ✅ Maximum 3 expanded wild reels (max 3 respins)
+   - ✅ Locked reels preserved during respins
+   - ✅ New wilds during respins award additional respins
+   - ✅ Respin state management implemented correctly
+
 ## ⚠️ Known Issues / TODO
 
-### Backend WinEvaluator
-**CRITICAL**: The backend `WinEvaluator.cs` currently has incorrect logic:
-- Line 26: `if (symbolCount < 8)` - This prevents ANY payouts since you can't have 8+ of the same symbol on a 5x3 grid
-- The evaluator doesn't use paylines - it just counts symbols across the entire grid
-- Starburst requires 10 fixed paylines with left-to-right and right-to-left evaluation
+### Paylines Configuration (Optional Enhancement)
+The paylines are currently hardcoded in `WinEvaluator.cs`, which is acceptable. For future flexibility, consider:
+- Moving paylines to JSON configuration
+- This would allow payline changes without code recompilation
+- Current implementation is correct and functional
 
-**Required Fix**: The `WinEvaluator.cs` needs to be rewritten to:
-1. Use the 10 Starburst paylines (defined in `frontend/src/game/config/paylines.ts`)
-2. Evaluate wins along each payline (both directions)
-3. Pay the highest win per payline
-4. Sum wins across different paylines
-
-### Paylines Configuration
-The backend needs a paylines configuration matching:
-```json
-{
-  "paylines": [
-    { "id": 1, "rows": [1,1,1,1,1] },
-    { "id": 2, "rows": [0,0,0,0,0] },
-    { "id": 3, "rows": [2,2,2,2,2] },
-    { "id": 4, "rows": [0,1,2,1,0] },
-    { "id": 5, "rows": [2,1,0,1,2] },
-    { "id": 6, "rows": [0,0,1,0,0] },
-    { "id": 7, "rows": [2,2,1,2,2] },
-    { "id": 8, "rows": [1,2,2,2,1] },
-    { "id": 9, "rows": [1,0,0,0,1] },
-    { "id": 10, "rows": [1,0,1,0,1] }
-  ]
-}
-```
-
-### Wild Expansion Logic
-The backend expanding wild and respin logic needs verification:
-- Ensure SYM_WILD expansion only triggers on reels 2-4 (indices 1, 2, 3)
-- Verify respin logic matches frontend behavior
-- Confirm maximum 3 expanded wild reels (max 3 respins)
 
 ## Summary
 
@@ -82,12 +69,13 @@ The backend expanding wild and respin logic needs verification:
 - Paytable matches Starburst math
 - Paylines correctly defined
 
-**Backend**: ⚠️ Partial compliance
-- ✅ Paytable updated to Starburst math
-- ✅ Reel strips enforce wild restrictions
-- ❌ WinEvaluator needs major refactor to use paylines
-- ❌ Paylines configuration missing
-- ⚠️ Wild expansion/respin logic needs verification
+**Backend**: ✅ Fully compliant with Starburst rules
+- ✅ Paytable matches Starburst math
+- ✅ Reel strips enforce wild restrictions (reels 0 and 4 never have wilds)
+- ✅ WinEvaluator uses 10 paylines with bidirectional evaluation
+- ✅ Wild expansion/respin logic correctly implemented
+- ✅ Maximum 3 respins enforced
+- ⚠️ Paylines hardcoded (optional: move to JSON config for flexibility)
 
 
 

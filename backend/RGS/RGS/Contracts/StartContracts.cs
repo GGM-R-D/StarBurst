@@ -5,7 +5,8 @@ public sealed record StartRequest(
     string LanguageId,
     string Client,
     int FunMode,
-    string Token);
+    string Token,
+    string? CurrencyId = null); // Optional: only if funMode=1 and game has no default currency
 
 public sealed record StartResponse(
     string SessionId,
