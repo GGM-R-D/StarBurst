@@ -100,9 +100,9 @@
   "reels": {
     "sourceFile": "configs/starburstReelsets.json",
     "keys": {
-      "high": "reelsetHigh",
-      "low": "reelsetLow",
-      "buy": "reelsetBB"
+      "high": "reelsetBase",
+      "low": "reelsetBase",
+      "buy": "reelsetBase"
     }
   },
   "maxWinMultiplier": 500

@@ -48,7 +48,7 @@ public sealed record ClientGame(
     ClientLastPlay LastPlay);
 
 public sealed record ClientBet(
-    decimal Default,
+    int Default,  // Index into Levels array (per spec)
     IReadOnlyList<decimal> Levels);
 
 public sealed record ClientGameConfig(
@@ -130,6 +130,7 @@ public sealed record ClientPlayFreeSpins(
     int Amount,
     int Left,
     bool IsPromotion,
+    decimal BetValue,  // Added per spec - bet value used with free spin
     decimal RoundWin,
     decimal TotalWin,
     decimal TotalBet,

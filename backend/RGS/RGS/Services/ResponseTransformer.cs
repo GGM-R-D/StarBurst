@@ -22,7 +22,7 @@ public static class ResponseTransformer
         string thousandSeparator,
         int currencyDecimals,
         decimal rtp,
-        decimal defaultBet,
+        int defaultBetIndex,  // Changed to index per spec
         IReadOnlyList<decimal> betLevels,
         decimal maxWinCap)
     {
@@ -46,7 +46,7 @@ public static class ResponseTransformer
             Game: new ClientGame(
                 Rtp: rtp,
                 Mode: 0,
-                Bet: new ClientBet(Default: defaultBet, Levels: betLevels),
+                Bet: new ClientBet(Default: defaultBetIndex, Levels: betLevels),
                 FunMode: internalResponse.FunMode == 1,
                 MaxWinCap: maxWinCap,
                 Config: new ClientGameConfig(
@@ -160,6 +160,7 @@ public static class ResponseTransformer
                 Amount: freeSpins?.TotalSpinsAwarded ?? 0,
                 Left: freeSpins?.SpinsRemaining ?? 0,
                 IsPromotion: false,
+                BetValue: bet,  // Added per spec - bet value used with free spin
                 RoundWin: engineResponse.FeatureWin.Amount,
                 TotalWin: freeSpins?.FeatureWin.Amount ?? 0,
                 TotalBet: 0,

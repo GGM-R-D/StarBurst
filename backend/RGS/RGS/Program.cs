@@ -14,12 +14,14 @@ builder.Services.AddProblemDetails();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
+// TEMPORARY CORS: allow any origin to call the RGS (browser-friendly, no credentials)
+// NOTE: Do NOT use AllowCredentials with AllowAnyOrigin.
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("AllowFrontend", policy =>
+    options.AddPolicy("AllowAll", policy =>
     {
         policy
-            .SetIsOriginAllowed(_ => true)
+            .AllowAnyOrigin()
             .AllowAnyHeader()
             .AllowAnyMethod();
     });
@@ -44,6 +46,9 @@ var logger = app.Logger;
 
 app.UseExceptionHandler();
 
+// Enable CORS early so OPTIONS and API calls succeed
+app.UseCors("AllowAll");
+
 // Only use HTTPS redirection in production
 if (!app.Environment.IsDevelopment())
 {
@@ -53,22 +58,35 @@ if (!app.Environment.IsDevelopment())
 app.UseSwagger();
 app.UseSwaggerUI();
 
-app.UseCors("AllowFrontend");
-
 app.MapPost("/{operatorId}/{gameId}/start",
         (string operatorId,
             string gameId,
             StartRequest request,
             SessionManager sessions,
             ITimeService timeService,
-            HttpContext httpContext) =>
+            HttpContext httpContext,
+            IConfiguration configuration) =>
         {
             if (request is null)
             {
                 return Results.Json(new { statusCode = ErrorCodes.BadRequest, message = ErrorCodes.GetMessage(ErrorCodes.BadRequest) }, statusCode: 200);
             }
 
-            var funMode = request.FunMode == 1;
+            // Check for forced fun mode override (for testing/demo purposes)
+            // Set via appsettings.json: "ForceFunMode": true
+            // Or environment variable: FORCE_FUN_MODE=true
+            var forceFunMode = configuration.GetValue<bool>("ForceFunMode", false) || 
+                              Environment.GetEnvironmentVariable("FORCE_FUN_MODE") == "true";
+            
+            // Determine effective fun mode
+            var effectiveFunMode = forceFunMode ? 1 : request.FunMode;
+            var funMode = effectiveFunMode == 1;
+            
+            if (forceFunMode)
+            {
+                Console.WriteLine($"[RGS] ForceFunMode enabled - overriding request funMode={request.FunMode} to funMode=1 (demo mode)");
+            }
+            
             if (!funMode && string.IsNullOrWhiteSpace(request.Token))
             {
                 return Results.Json(new { statusCode = ErrorCodes.BadRequest, message = "token is required when funMode=0." }, statusCode: 200);
@@ -87,18 +105,20 @@ app.MapPost("/{operatorId}/{gameId}/start",
             var playerId = request.Token ?? "DEMO_PLAYER";
             GameLogger.LogSessionStart(session.SessionId, gameId, initialBalance, playerId);
 
-            // Internal response for tracking
+            // Internal response for tracking (use effective fun mode, not original request)
             var internalResponse = new StartResponse(
                 SessionId: session.SessionId,
                 GameId: gameId,
                 OperatorId: operatorId,
-                FunMode: request.FunMode,
+                FunMode: effectiveFunMode, // Use effective fun mode (may be overridden)
                 CreatedAt: timestamp,
                 TimeSignature: timeService.UnixMilliseconds.ToString(CultureInfo.InvariantCulture),
                 ThemeId: gameId);
 
             // Transform to client-compliant response
             var clientIp = httpContext.Connection.RemoteIpAddress?.ToString() ?? "127.0.0.1";
+            var betLevels = new[] { 0.5m, 1m, 2m, 3m, 5m, 10m }; // TODO: Get from game configuration
+            var defaultBetIndex = 1; // Index into betLevels (1 = 1m, the second item)
             var clientResponse = ResponseTransformer.ToClientStartResponse(
                 internalResponse: internalResponse,
                 playerId: playerId,
@@ -114,8 +134,8 @@ app.MapPost("/{operatorId}/{gameId}/start",
                 thousandSeparator: ",",
                 currencyDecimals: 2,
                 rtp: 96.5m, // TODO: Get from game configuration
-                defaultBet: 1m, // TODO: Get from game configuration
-                betLevels: new[] { 0.5m, 1m, 2m, 3m, 5m, 10m }, // TODO: Get from game configuration
+                defaultBetIndex: defaultBetIndex, // Index into betLevels array (per spec)
+                betLevels: betLevels,
                 maxWinCap: 0m); // TODO: Get from game configuration
 
             return Results.Ok(clientResponse);
@@ -182,6 +202,9 @@ app.MapPost("/{operatorId}/{gameId}/play",
                 return Results.Json(new { statusCode = ErrorCodes.BadRequest, message = ex.Message }, statusCode: 200);
             }
 
+            // Log fun mode status for debugging
+            Console.WriteLine($"[RGS] Play request - Session FunMode: {session.FunMode}, SessionId: {session.SessionId}");
+            
             var engineRequest = new PlayRequest(
                 GameId: gameId,
                 PlayerToken: session.PlayerToken,
@@ -192,7 +215,10 @@ app.MapPost("/{operatorId}/{gameId}/play",
                 IsFeatureBuy: false,
                 EngineState: session.State ?? EngineSessionState.Create(),
                 UserPayload: request.UserPayload,
-                LastResponse: request.LastResponse);
+                LastResponse: request.LastResponse,
+                FunMode: session.FunMode); // Pass funMode from session to engine
+            
+            Console.WriteLine($"[RGS] Engine request created - FunMode: {engineRequest.FunMode}");
 
             // Log play request
             var isRespinBeforeSpin = session.State?.Respins is not null && session.State.Respins.RespinsRemaining > 0;
@@ -213,7 +239,28 @@ app.MapPost("/{operatorId}/{gameId}/play",
                 GameLogger.LogInfo($"RESPIN REQUEST - State details: RespinsRemaining={session.State.Respins.RespinsRemaining}, LockedWildReels (0-based)=[{string.Join(", ", session.State.Respins.LockedWildReels)}], LockedWildReels (1-based)=[{lockedReelsInfo}]");
             }
 
-            var engineResponse = await engineClient.PlayAsync(engineRequest, cancellationToken);
+            PlayResponse engineResponse;
+            try
+            {
+                engineResponse = await engineClient.PlayAsync(engineRequest, cancellationToken);
+            }
+            catch (RGS.Services.EngineCallException ex)
+            {
+                // Don't crash the RGS process on engine validation failures.
+                // Per RGS style in this project, return HTTP 200 with an internal statusCode.
+                var mappedStatus = ex.HttpStatusCode == 400 ? ErrorCodes.BadRequest : ErrorCodes.InternalServerError;
+                var message = !string.IsNullOrWhiteSpace(ex.ErrorContent)
+                    ? ex.ErrorContent
+                    : ErrorCodes.GetMessage(mappedStatus);
+
+                logger.LogError(ex, "Engine call failed: {Message}", message);
+                return Results.Json(new { statusCode = mappedStatus, message }, statusCode: 200);
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Unexpected error while calling engine");
+                return Results.Json(new { statusCode = ErrorCodes.InternalServerError, message = ErrorCodes.GetMessage(ErrorCodes.InternalServerError) }, statusCode: 200);
+            }
             sessions.UpdateState(session.SessionId, engineResponse.NextState);
 
             // Get current balance from session (before update)

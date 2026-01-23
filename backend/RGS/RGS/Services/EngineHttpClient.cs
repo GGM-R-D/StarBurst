@@ -1,4 +1,5 @@
 using System.Net.Http.Json;
+using System.Net;
 using System.Text.Json;
 using GameEngine.Play;
 using Microsoft.AspNetCore.Http.Json;
@@ -10,6 +11,19 @@ namespace RGS.Services;
 public interface IEngineClient
 {
     Task<PlayResponse> PlayAsync(PlayRequest request, CancellationToken cancellationToken);
+}
+
+public sealed class EngineCallException : Exception
+{
+    public int HttpStatusCode { get; }
+    public string? ErrorContent { get; }
+
+    public EngineCallException(int httpStatusCode, string? errorContent)
+        : base($"Backend engine returned {(HttpStatusCode)httpStatusCode} - {errorContent}")
+    {
+        HttpStatusCode = httpStatusCode;
+        ErrorContent = errorContent;
+    }
 }
 
 public sealed class EngineHttpClient : IEngineClient
@@ -38,7 +52,7 @@ public sealed class EngineHttpClient : IEngineClient
             {
                 var errorContent = await response.Content.ReadAsStringAsync(cancellationToken);
                 _logger.LogError("Backend engine returned error: {StatusCode} - {Error}", response.StatusCode, errorContent);
-                response.EnsureSuccessStatusCode();
+                throw new EngineCallException((int)response.StatusCode, errorContent);
             }
 
             var payload = await response.Content.ReadFromJsonAsync<PlayResponse>(_serializerOptions, cancellationToken: cancellationToken);

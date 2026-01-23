@@ -120,14 +120,98 @@ public sealed class SpinHandler
         }
         Console.WriteLine($"[SpinHandler] lockedReelsForBoardCreation: {(lockedReelsForBoardCreation != null ? $"Count={lockedReelsForBoardCreation.Count}, Reels=[{string.Join(", ", lockedReelsForBoardCreation)}]" : "null")}");
 
-        var board = ReelBoard.Create(
-            reelStrips,
-            configuration.SymbolMap,
-            configuration.Board.Rows,
-            multiplierFactory,
-            randomContext.ReelStartSeeds,
-            _fortunaPrng,
-            lockedReelsForBoardCreation);
+        // Check for fun mode - use pre-configured grids instead of RNG
+        // IMPORTANT: Fun mode grids are ONLY used for base game spins, NOT respins
+        // During respins, we use normal RNG to avoid validation errors and allow natural gameplay
+        ReelBoard board;
+        string? customGridValidationError = null; // Store validation error to return in response
+        if (request.FunMode && spinMode == SpinMode.BaseGame)
+        {
+            Console.WriteLine("[SpinHandler] ===== FUN MODE ACTIVE (BASE GAME) =====");
+            
+            IReadOnlyList<int>? funModeGrid = null;
+            
+            // Check for custom grid in UserPayload (only in fun mode)
+            Console.WriteLine($"[SpinHandler] Checking UserPayload for custom grid. HasValue: {request.UserPayload.HasValue}");
+            if (request.UserPayload.HasValue)
+            {
+                Console.WriteLine($"[SpinHandler] UserPayload content: {request.UserPayload.Value}");
+                if (request.UserPayload.Value.TryGetProperty("customFunModeGrid", out var gridElement))
+                {
+                    Console.WriteLine($"[SpinHandler] ✅ Custom grid found in UserPayload!");
+                    try
+                    {
+                        var gridArray = gridElement.EnumerateArray().Select(e => e.GetInt32()).ToArray();
+                        Console.WriteLine($"[SpinHandler] Parsed grid array: [{string.Join(", ", gridArray)}]");
+                        Console.WriteLine($"[SpinHandler] Grid length: {gridArray.Length}, Expected: {configuration.Board.Columns * configuration.Board.Rows}");
+                        
+                        if (gridArray.Length == configuration.Board.Columns * configuration.Board.Rows)
+                        {
+                            Console.WriteLine("[SpinHandler] Custom grid found in UserPayload - validating against reel strips...");
+                            ValidateCustomGridAgainstReelStrips(gridArray, reelStrips, configuration);
+                            funModeGrid = gridArray;
+                            Console.WriteLine("[SpinHandler] ✅ Custom grid validated successfully! Will be used for this spin.");
+                        }
+                        else
+                        {
+                            customGridValidationError = $"Custom grid has wrong size ({gridArray.Length}), expected {configuration.Board.Columns * configuration.Board.Rows}.";
+                            Console.WriteLine($"[SpinHandler] WARNING: {customGridValidationError} Using random grid instead.");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        customGridValidationError = ex.Message;
+                        Console.WriteLine($"[SpinHandler] ERROR: Custom grid validation failed: {ex.Message}. Using random grid instead.");
+                    }
+                }
+                else
+                {
+                    Console.WriteLine("[SpinHandler] No 'customFunModeGrid' property found in UserPayload");
+                }
+            }
+            else
+            {
+                Console.WriteLine("[SpinHandler] UserPayload is null or has no value");
+            }
+            
+            if (funModeGrid == null)
+            {
+                Console.WriteLine("[SpinHandler] Using pre-configured grid instead of RNG");
+                funModeGrid = FunModeGridProvider.GetRandomGrid(_fortunaPrng);
+                Console.WriteLine($"[SpinHandler] Selected fun mode grid (random from {FunModeGridProvider.GridCount} available grids)");
+            }
+            else
+            {
+                Console.WriteLine("[SpinHandler] Using CUSTOM user-input grid (fun mode)");
+            }
+            
+            board = CreateFunModeBoard(funModeGrid, configuration, multiplierFactory);
+            Console.WriteLine("[SpinHandler] ============================");
+        }
+        else
+        {
+            if (request.FunMode && spinMode == SpinMode.Respin)
+            {
+                Console.WriteLine("[SpinHandler] ===== FUN MODE ACTIVE (RESPIN) =====");
+                Console.WriteLine("[SpinHandler] Respins use normal RNG (not pre-configured grids) to preserve locked reels");
+                Console.WriteLine("[SpinHandler] =====================================");
+            }
+            else
+            {
+                Console.WriteLine("[SpinHandler] ===== NORMAL MODE (RNG) =====");
+                Console.WriteLine("[SpinHandler] request.FunMode = false - Using RNG to generate random grid");
+                Console.WriteLine("[SpinHandler] ==============================");
+            }
+            // Normal board creation with RNG (used for both normal mode and fun mode respins)
+            board = ReelBoard.Create(
+                reelStrips,
+                configuration.SymbolMap,
+                configuration.Board.Rows,
+                multiplierFactory,
+                randomContext.ReelStartSeeds,
+                _fortunaPrng,
+                lockedReelsForBoardCreation);
+        }
         Console.WriteLine("[SpinHandler] Board created");
         
         // IMPORTANT: Capture the initial grid BEFORE wild expansion for visual animation
@@ -436,6 +520,11 @@ public sealed class SpinHandler
 
         Console.WriteLine($"[SpinHandler] Creating response: TotalWin={totalWin.Amount}, Wins={wins.Count}, Cascades={cascades.Count}");
         
+        // Include custom grid validation error in message if present
+        var responseMessage = customGridValidationError != null 
+            ? customGridValidationError 
+            : "Request processed successfully";
+        
         var response = new PlayResponse(
             StatusCode: 200,
             Win: totalWin,
@@ -453,7 +542,7 @@ public sealed class SpinHandler
                 FreeSpins: null, // No free spins feature in Starburst
                 RngTransactionId: roundId,
                 FinalGridSymbols: finalGrid),
-            Message: "Request processed successfully",
+            Message: responseMessage,
             Feature: featureOutcome);
 
         _telemetry.Record(new SpinTelemetryEvent(
@@ -502,33 +591,8 @@ public sealed class SpinHandler
         SpinMode mode,
         BetMode betMode)
     {
-        // Note: No free spins feature in Starburst - only base game, buy entry, and respin
-        return mode switch
-        {
-            SpinMode.BuyEntry => configuration.ReelLibrary.Buy,
-            SpinMode.Respin => SelectBaseReels(configuration), // Use base reels for respins
-            _ => SelectBaseReels(configuration) // Base game - always use standard bet mode
-        };
-    }
-
-    private IReadOnlyList<IReadOnlyList<string>> SelectBaseReels(GameConfiguration configuration)
-    {
-        // Note: No ante bet mode in Starburst - only standard bet mode
-        if (!configuration.BetModes.TryGetValue("standard", out var modeDefinition))
-        {
-            return configuration.ReelLibrary.High;
-        }
-
-        var lowWeight = Math.Max(0, modeDefinition.ReelWeights.Low);
-        var highWeight = Math.Max(0, modeDefinition.ReelWeights.High);
-        var total = lowWeight + highWeight;
-        if (total <= 0)
-        {
-            return configuration.ReelLibrary.High;
-        }
-
-        var roll = _fortunaPrng.NextInt32(0, total);
-        return roll < lowWeight ? configuration.ReelLibrary.Low : configuration.ReelLibrary.High;
+        // Single reel set (reelsetBase) used for all modes: base game, buy entry, and respin
+        return configuration.ReelLibrary.High;
     }
 
     private async Task<RandomContext> FetchRandomContext(
@@ -661,6 +725,181 @@ public sealed class SpinHandler
     {
         var randomSuffix = _fortunaPrng.NextInt32(0, int.MaxValue);
         return $"{_timeService.UnixMilliseconds:X}-{randomSuffix:X}";
+    }
+
+    /// <summary>
+    /// Creates a board from a fun mode grid (pre-configured grid).
+    /// Fun mode grid is a flat array of 15 symbol IDs (0-based indices in symbol catalog).
+    /// Layout: Column-major order (reel 0: indices 0,1,2, reel 1: indices 3,4,5, etc.)
+    /// </summary>
+    private ReelBoard CreateFunModeBoard(
+        IReadOnlyList<int> funModeGrid,
+        GameConfiguration configuration,
+        Func<SymbolDefinition, decimal> multiplierFactory)
+    {
+        var expectedSize = configuration.Board.Columns * configuration.Board.Rows;
+        if (funModeGrid.Count != expectedSize)
+        {
+            throw new ArgumentException(
+                $"Fun mode grid must have {expectedSize} symbols (got {funModeGrid.Count}). " +
+                $"Grid is column-major: [reel0_row0, reel0_row1, reel0_row2, reel1_row0, ...]");
+        }
+
+        var columns = new List<ReelColumn>(configuration.Board.Columns);
+        var symbolCatalog = configuration.SymbolCatalog;
+
+        for (int col = 0; col < configuration.Board.Columns; col++)
+        {
+            var symbols = new List<SymbolInstance>();
+            
+            for (int row = 0; row < configuration.Board.Rows; row++)
+            {
+                // Convert column-major index to flat index
+                int flatIndex = col * configuration.Board.Rows + row;
+                int symbolId = funModeGrid[flatIndex];
+                
+                if (symbolId < 0 || symbolId >= symbolCatalog.Count)
+                {
+                    throw new ArgumentException(
+                        $"Invalid symbol ID {symbolId} at position [{col},{row}] (flat index {flatIndex}). " +
+                        $"Must be between 0 and {symbolCatalog.Count - 1}.");
+                }
+                
+                var symbolDef = symbolCatalog[symbolId];
+                var multiplier = multiplierFactory(symbolDef);
+                symbols.Add(new SymbolInstance(symbolDef, multiplier));
+            }
+            
+            // Create a ReelColumn with a dummy strip (won't be used since we replace symbols)
+            // We need to use the first symbol's Sym value for the dummy strip
+            var dummyStrip = new List<string> { symbolCatalog[0].Sym };
+            var column = new ReelColumn(dummyStrip, 0, configuration.Board.Rows, configuration.SymbolMap, multiplierFactory);
+            
+            // Replace the symbols with our fun mode symbols
+            column.Symbols.Clear();
+            column.Symbols.AddRange(symbols);
+            
+            columns.Add(column);
+        }
+
+        Console.WriteLine("[SpinHandler] Created FUN MODE board with pre-configured grid");
+        LogFunModeGrid(funModeGrid, configuration);
+        
+        return ReelBoard.CreateFromColumns(columns, configuration.Board.Rows);
+    }
+
+    /// <summary>
+    /// Logs the fun mode grid in a readable format for debugging.
+    /// </summary>
+    private void LogFunModeGrid(IReadOnlyList<int> funModeGrid, GameConfiguration configuration)
+    {
+        Console.WriteLine("[SpinHandler] ===== FUN MODE GRID LAYOUT =====");
+        Console.WriteLine("Column-major order (as provided):");
+        Console.WriteLine($"  [{string.Join(", ", funModeGrid)}]");
+        Console.WriteLine("Visual representation (5 columns × 3 rows):");
+        for (int row = 0; row < configuration.Board.Rows; row++)
+        {
+            var rowSymbols = new List<string>();
+            for (int col = 0; col < configuration.Board.Columns; col++)
+            {
+                int flatIndex = col * configuration.Board.Rows + row;
+                int symbolId = funModeGrid[flatIndex];
+                var symbolDef = configuration.SymbolCatalog[symbolId];
+                rowSymbols.Add($"{symbolDef.Code}({symbolId})");
+            }
+            var rowLabel = row == 0 ? "TOP" : row == 1 ? "MID" : "BOT";
+            Console.WriteLine($"  {rowLabel} ROW: [{string.Join(" | ", rowSymbols)}]");
+        }
+        Console.WriteLine("[SpinHandler] =================================");
+    }
+
+    /// <summary>
+    /// Validates that each 3-symbol column (reel) appears as a contiguous sequence in the reel strip.
+    /// Grid is column-major: [reel0_row0, reel0_row1, reel0_row2, reel1_row0, ...]
+    /// Checks if the entire column sequence [top, middle, bottom] exists in the reel strip (with wrap-around).
+    /// Throws exception if any column sequence doesn't exist in its reel strip.
+    /// </summary>
+    private void ValidateCustomGridAgainstReelStrips(
+        IReadOnlyList<int> customGrid,
+        IReadOnlyList<IReadOnlyList<string>> reelStrips,
+        GameConfiguration configuration)
+    {
+        var expectedSize = configuration.Board.Columns * configuration.Board.Rows;
+        if (customGrid.Count != expectedSize)
+        {
+            throw new ArgumentException(
+                $"Custom grid must have {expectedSize} symbols (got {customGrid.Count}). " +
+                $"Grid is column-major: [reel0_row0, reel0_row1, reel0_row2, reel1_row0, ...]");
+        }
+
+        for (int col = 0; col < configuration.Board.Columns; col++)
+        {
+            if (col >= reelStrips.Count)
+            {
+                throw new ArgumentException($"Custom grid references reel {col + 1}, but only {reelStrips.Count} reels exist.");
+            }
+
+            var reelStrip = reelStrips[col];
+            
+            // Extract the 3-symbol column sequence for this reel
+            var columnSymbols = new List<string>();
+            for (int row = 0; row < configuration.Board.Rows; row++)
+            {
+                int flatIndex = col * configuration.Board.Rows + row;
+                int symbolId = customGrid[flatIndex];
+
+                if (symbolId < 0 || symbolId >= configuration.SymbolCatalog.Count)
+                {
+                    throw new ArgumentException(
+                        $"Invalid symbol ID {symbolId} at position [{col},{row}] (flat index {flatIndex}). " +
+                        $"Must be between 0 and {configuration.SymbolCatalog.Count - 1}.");
+                }
+
+                var symbolDef = configuration.SymbolCatalog[symbolId];
+                columnSymbols.Add(symbolDef.Sym);
+            }
+
+            // Check if this 3-symbol sequence appears anywhere in the reel strip (with wrap-around)
+            bool sequenceFound = false;
+            int stripLength = reelStrip.Count;
+            
+            // Check all possible starting positions in the reel strip
+            for (int startPos = 0; startPos < stripLength; startPos++)
+            {
+                bool matches = true;
+                for (int i = 0; i < columnSymbols.Count; i++)
+                {
+                    int pos = (startPos + i) % stripLength; // Wrap around if needed
+                    if (reelStrip[pos] != columnSymbols[i])
+                    {
+                        matches = false;
+                        break;
+                    }
+                }
+                
+                if (matches)
+                {
+                    sequenceFound = true;
+                    break;
+                }
+            }
+
+            if (!sequenceFound)
+            {
+                var symbolCodes = columnSymbols.Select(sym => 
+                {
+                    var symbolDef = configuration.SymbolCatalog.FirstOrDefault(sd => sd.Sym == sym);
+                    return symbolDef?.Code ?? sym;
+                }).ToList();
+                
+                throw new InvalidOperationException(
+                    $"Custom grid does not exist: Reel {col + 1} column sequence [{string.Join(", ", symbolCodes)}] " +
+                    $"(Sym=[{string.Join(", ", columnSymbols)}]) does not appear in reel strip {col + 1}. " +
+                    $"The entire 3-symbol column must exist as a contiguous sequence in the reel.");
+            }
+        }
+        
+        Console.WriteLine("[SpinHandler] Custom grid validation passed - all reel columns exist as sequences in their reel strips.");
     }
 
     /// <summary>
@@ -1102,6 +1341,14 @@ public sealed class SpinHandler
                 }
             }
 
+            return new ReelBoard(columns, rows);
+        }
+
+        /// <summary>
+        /// Creates a ReelBoard from a list of pre-constructed columns (for fun mode).
+        /// </summary>
+        public static ReelBoard CreateFromColumns(List<ReelColumn> columns, int rows)
+        {
             return new ReelBoard(columns, rows);
         }
 

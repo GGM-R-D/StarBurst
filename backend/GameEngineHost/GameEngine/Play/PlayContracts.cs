@@ -19,7 +19,8 @@ public sealed record PlayRequest(
     Money? Bet = null, // Calculated total bet (sum of all amounts in bets array) - IMPORTANT!
     int? RtpLevel = null, // RTP level if game supports multiple RTP (1,2,3,4 etc.)
     int? Mode = null, // Game mode: 0=normal, 1=free spin, 2=bonus game, 3=free bets
-    JsonElement? Currency = null); // Currency object with id property (e.g., {"id": "EUR"})
+    JsonElement? Currency = null, // Currency object with id property (e.g., {"id": "EUR"})
+    bool FunMode = false); // If true, uses pre-configured fun mode grids instead of RNG
 
 public sealed record BetRequest(string BetType, Money Amount);
 

@@ -1,31 +1,36 @@
 {
-  "reelsetHigh": [
-    ["Sym2", "Sym3", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym2", "Sym3", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym2", "Sym3", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym2", "Sym3", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym2", "Sym3", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8"],
-    ["Sym2", "Sym3", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym2", "Sym3", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym1", "Sym2", "Sym3", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym2", "Sym3", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym2", "Sym3", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8"],
-    ["Sym2", "Sym3", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym2", "Sym3", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym1", "Sym2", "Sym3", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym2", "Sym3", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym2", "Sym3", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8"],
-    ["Sym2", "Sym3", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym2", "Sym3", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym1", "Sym2", "Sym3", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym2", "Sym3", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym2", "Sym3", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8"],
-    ["Sym2", "Sym3", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym2", "Sym3", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym2", "Sym3", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym2", "Sym3", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym2", "Sym3", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8"]
-  ],
-  "reelsetLow": [
-    ["Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8"],
-    ["Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym1", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8"],
-    ["Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym1", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8"],
-    ["Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym1", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8"],
-    ["Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8"]
-  ],
-  "reelsetBB": [
-    ["Sym2", "Sym3", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym2", "Sym3", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym2", "Sym3", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym2", "Sym3", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym2", "Sym3", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8"],
-    ["Sym2", "Sym3", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym2", "Sym3", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym1", "Sym2", "Sym3", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym2", "Sym3", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym2", "Sym3", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8"],
-    ["Sym2", "Sym3", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym2", "Sym3", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym1", "Sym2", "Sym3", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym2", "Sym3", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym2", "Sym3", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8"],
-    ["Sym2", "Sym3", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym2", "Sym3", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym1", "Sym2", "Sym3", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym2", "Sym3", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym2", "Sym3", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8"],
-    ["Sym2", "Sym3", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym2", "Sym3", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym2", "Sym3", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym2", "Sym3", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym2", "Sym3", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8"]
-  ],
-  "reelsetFreeSpins": [
-    ["Sym2", "Sym3", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym2", "Sym3", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym2", "Sym3", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym2", "Sym3", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym2", "Sym3", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8"],
-    ["Sym2", "Sym3", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym2", "Sym3", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym1", "Sym2", "Sym3", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym2", "Sym3", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym2", "Sym3", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8"],
-    ["Sym2", "Sym3", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym2", "Sym3", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym1", "Sym2", "Sym3", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym2", "Sym3", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym2", "Sym3", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8"],
-    ["Sym2", "Sym3", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym2", "Sym3", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym1", "Sym2", "Sym3", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym2", "Sym3", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym2", "Sym3", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8"],
-    ["Sym2", "Sym3", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym2", "Sym3", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym2", "Sym3", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym2", "Sym3", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8", "Sym2", "Sym3", "Sym4", "Sym5", "Sym6", "Sym7", "Sym8"]
-  ]
-}
+ 
+  "reelsetBase": [
 
+    [
+      "Sym5", "Sym8", "Sym6", "Sym7", "Sym6", "Sym5", "Sym4", "Sym7", "Sym6", "Sym5",
+      "Sym6", "Sym4", "Sym6", "Sym5", "Sym3", "Sym2", "Sym4", "Sym5", "Sym7", "Sym5",
+      "Sym3", "Sym5", "Sym4", "Sym3", "Sym5", "Sym6", "Sym7", "Sym4", "Sym5", "Sym7",
+      "Sym6", "Sym8", "Sym6", "Sym8", "Sym2", "Sym4", "Sym7", "Sym4", "Sym6", "Sym8"
+    ],
+    [
+      "Sym6", "Sym7", "Sym6", "Sym4", "Sym5", "Sym6", "Sym5", "Sym4", "Sym5", "Sym6",
+      "Sym4", "Sym6", "Sym5", "Sym7", "Sym5", "Sym3", "Sym6", "Sym1", "Sym4", "Sym3",
+      "Sym6", "Sym7", "Sym5", "Sym3", "Sym5", "Sym7", "Sym2", "Sym8", "Sym2", "Sym4",
+      "Sym7", "Sym8", "Sym4", "Sym5", "Sym6", "Sym8", "Sym6", "Sym7", "Sym5", "Sym8"
+    ],
+    [
+      "Sym6", "Sym4", "Sym5", "Sym6", "Sym4", "Sym5", "Sym7", "Sym2", "Sym6", "Sym4",
+      "Sym5", "Sym4", "Sym3", "Sym5", "Sym4", "Sym5", "Sym6", "Sym2", "Sym7", "Sym8",
+      "Sym5", "Sym6", "Sym7", "Sym5", "Sym6", "Sym8", "Sym7", "Sym5", "Sym8", "Sym5",
+      "Sym6", "Sym3", "Sym7", "Sym4", "Sym3", "Sym7", "Sym6", "Sym1", "Sym6", "Sym8"
+    ],
+    [
+      "Sym5", "Sym3", "Sym7", "Sym8", "Sym1", "Sym5", "Sym3", "Sym5", "Sym2", "Sym5",
+      "Sym4", "Sym6", "Sym4", "Sym6", "Sym8", "Sym6", "Sym5", "Sym6", "Sym5", "Sym7",
+      "Sym4", "Sym7", "Sym6", "Sym2", "Sym6", "Sym7", "Sym5", "Sym8", "Sym4", "Sym5",
+      "Sym4", "Sym6", "Sym8", "Sym6", "Sym3", "Sym7", "Sym6", "Sym5", "Sym4", "Sym7"
+    ],
+    [
+      "Sym5", "Sym7", "Sym6", "Sym2", "Sym8", "Sym2", "Sym3", "Sym8", "Sym5", "Sym4",
+      "Sym7", "Sym8", "Sym4", "Sym5", "Sym8", "Sym6", "Sym5", "Sym6", "Sym5", "Sym7",
+      "Sym4", "Sym6", "Sym5", "Sym6", "Sym7", "Sym5", "Sym4", "Sym7", "Sym4", "Sym3",
+      "Sym6", "Sym4", "Sym6", "Sym5", "Sym3", "Sym4", "Sym6", "Sym5", "Sym6", "Sym7"
+    ]
+      ]
+}
