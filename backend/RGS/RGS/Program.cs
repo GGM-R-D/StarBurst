@@ -387,9 +387,10 @@ app.MapPost("/{gameId}/buy-free-spins",
             List<BetRequest> betRequests;
             try
             {
+                // BetRequest now takes Amount first, BetType second (BetType is optional per RGS spec)
                 betRequests = request.Bets is { Count: > 0 }
                     ? ConvertBetRequests(request.Bets)
-                    : new List<BetRequest> { new("BASE", baseBet) };
+                    : new List<BetRequest> { new(baseBet, "BASE") };
             }
             catch (ArgumentException ex)
             {
@@ -692,7 +693,8 @@ static List<BetRequest> ConvertBetRequests(IReadOnlyList<ClientBetRequest> bets)
     {
         try
         {
-            betRequests.Add(new BetRequest(bet.BetType, new Money(bet.Amount)));
+            // BetRequest now takes Amount first, BetType second (BetType is optional per RGS spec)
+            betRequests.Add(new BetRequest(new Money(bet.Amount), bet.BetType));
         }
         catch (Exception ex)
         {

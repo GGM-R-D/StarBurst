@@ -1,6 +1,25 @@
-using System.Net.Http.Json;
-using System.Text;
-using System.Text.Json;
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// OutcomeTester.cs - Interactive Outcome Testing
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+//
+// PURPOSE:
+//   This class allows users to select specific win configurations (payline + symbol + match count)
+//   and either simulate them locally OR trigger them on the actual browser game using Playwright.
+//
+// KEY FEATURES:
+//   1. Single payline testing - Test one specific payline win
+//   2. Multi-payline testing - Test multiple paylines winning simultaneously
+//   3. Browser integration - Trigger spins on localhost:3030 with Playwright
+//   4. Local simulation - Execute wins using the game engine without browser
+//
+// HOW IT WORKS:
+//   1. User selects a payline (1-10), symbol (BAR, SEVEN, etc.), and match count (3, 4, or 5)
+//   2. The algorithm searches the reel strips (from starburstReelsets.json) for valid positions
+//   3. If found, a grid is built that produces the requested win
+//   4. The grid can be displayed, simulated locally, or sent to the browser game
+//
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+
 using GameEngine.Configuration;
 using GameEngine.Play;
 using GameEngine.Services;
@@ -10,33 +29,81 @@ namespace Simulator;
 /// <summary>
 /// Interactive outcome tester that allows users to select specific payline/symbol/count
 /// combinations and verifies they can be achieved with the current reel strips.
+/// 
+/// This is used for:
+/// - GLI compliance testing (verifying all paylines are reachable)
+/// - QA testing (testing specific win scenarios)
+/// - Demo purposes (showing specific outcomes to stakeholders)
 /// </summary>
 public sealed class OutcomeTester
 {
+    // ═══════════════════════════════════════════════════════════════════════════════════════════
+    // PRIVATE FIELDS
+    // ═══════════════════════════════════════════════════════════════════════════════════════════
+    
+    /// <summary>
+    /// Loads game configuration from JSON files (starburst.json, starburstReelsets.json)
+    /// </summary>
     private readonly GameConfigurationLoader _configLoader;
+    
+    /// <summary>
+    /// Path to the configs directory (e.g., "backend/GameEngineHost/configs")
+    /// </summary>
     private readonly string _configPath;
-    private readonly HttpClient _httpClient;
+    
+    /// <summary>
+    /// Playwright browser controller for automating Chrome
+    /// Nullable because browser connection is optional
+    /// </summary>
     private BrowserController? _browserController;
-    private string? _rgsBaseUrl = "http://localhost:5101";
-    private string? _currentSessionId;
-    private decimal _sessionBalance = 10000m;
+    
+    /// <summary>
+    /// Tracks whether we have an active browser connection
+    /// </summary>
     private bool _browserConnected = false;
 
-    // Payline definitions matching WinEvaluator
+    // ═══════════════════════════════════════════════════════════════════════════════════════════
+    // STATIC DATA: PAYLINE DEFINITIONS
+    // ═══════════════════════════════════════════════════════════════════════════════════════════
+    //
+    // Each payline is an array of 5 integers representing ROW POSITIONS on each reel.
+    // Row indices: 0 = Top row, 1 = Middle row, 2 = Bottom row
+    //
+    // Example: Payline [1, 1, 1, 1, 1] means "middle row on all 5 reels" (a straight line)
+    // Example: Payline [0, 1, 2, 1, 0] means "V-shape" (top, middle, bottom, middle, top)
+    //
+    // Visual representation of payline 1 (middle row):
+    //
+    //   Reel 1   Reel 2   Reel 3   Reel 4   Reel 5
+    //   ─────────────────────────────────────────────
+    //    [0]      [0]      [0]      [0]      [0]     ← Top row
+    //   >[1]<    >[1]<    >[1]<    >[1]<    >[1]<    ← Middle row (payline 1)
+    //    [2]      [2]      [2]      [2]      [2]     ← Bottom row
+    //
+    // ═══════════════════════════════════════════════════════════════════════════════════════════
+    
+    /// <summary>
+    /// Payline definitions matching WinEvaluator.cs
+    /// Each sub-array has 5 elements (one per reel) representing the row index
+    /// These MUST match the definitions in the game engine's WinEvaluator!
+    /// </summary>
     private static readonly int[][] Paylines = new[]
     {
-        new[] { 1, 1, 1, 1, 1 }, // Payline 1: Middle row
-        new[] { 0, 0, 0, 0, 0 }, // Payline 2: Top row
-        new[] { 2, 2, 2, 2, 2 }, // Payline 3: Bottom row
-        new[] { 0, 1, 2, 1, 0 }, // Payline 4: V-shape up
-        new[] { 2, 1, 0, 1, 2 }, // Payline 5: V-shape down
-        new[] { 0, 0, 1, 0, 0 }, // Payline 6: Top-center
-        new[] { 2, 2, 1, 2, 2 }, // Payline 7: Bottom-center
-        new[] { 1, 2, 2, 2, 1 }, // Payline 8: Bottom-heavy
-        new[] { 1, 0, 0, 0, 1 }, // Payline 9: Top-heavy
-        new[] { 1, 0, 1, 0, 1 }  // Payline 10: Alternating
+        new[] { 1, 1, 1, 1, 1 }, // Payline 1: Middle row (straight horizontal)
+        new[] { 0, 0, 0, 0, 0 }, // Payline 2: Top row (straight horizontal)
+        new[] { 2, 2, 2, 2, 2 }, // Payline 3: Bottom row (straight horizontal)
+        new[] { 0, 1, 2, 1, 0 }, // Payline 4: V-shape going down then up
+        new[] { 2, 1, 0, 1, 2 }, // Payline 5: Inverted V (mountain shape)
+        new[] { 0, 0, 1, 0, 0 }, // Payline 6: Top with dip to middle
+        new[] { 2, 2, 1, 2, 2 }, // Payline 7: Bottom with rise to middle
+        new[] { 1, 2, 2, 2, 1 }, // Payline 8: Middle-bottom-bottom-bottom-middle
+        new[] { 1, 0, 0, 0, 1 }, // Payline 9: Middle-top-top-top-middle
+        new[] { 1, 0, 1, 0, 1 }  // Payline 10: Alternating middle-top pattern
     };
 
+    /// <summary>
+    /// Human-readable descriptions for each payline (displayed in menus)
+    /// </summary>
     private static readonly string[] PaylineDescriptions = new[]
     {
         "Middle row (straight)",
@@ -51,24 +118,53 @@ public sealed class OutcomeTester
         "Alternating"
     };
 
-    // Symbol definitions
+    // ═══════════════════════════════════════════════════════════════════════════════════════════
+    // STATIC DATA: SYMBOL DEFINITIONS
+    // ═══════════════════════════════════════════════════════════════════════════════════════════
+    //
+    // Starburst has 8 symbols. Each symbol has:
+    // - Sym: Internal identifier used in reelsets (e.g., "Sym4")
+    // - Code: Display code used in paytable (e.g., "RED")
+    // - Name: Human-readable name (e.g., "Red Gem")
+    //
+    // Symbol values (high to low):
+    //   WILD (Sym1) - Special: substitutes for all, triggers expanding wilds
+    //   BAR (Sym2)  - Highest payer: 50x/200x/250x for 3/4/5 match
+    //   SEVEN (Sym3) - High payer: 25x/100x/120x
+    //   Gems (Sym4-Sym8) - Low payers: vary from 5x to 60x
+    //
+    // ═══════════════════════════════════════════════════════════════════════════════════════════
+    
+    /// <summary>
+    /// Symbol definitions mapping internal IDs to display codes and names.
+    /// Tuple format: (InternalSym, DisplayCode, FriendlyName)
+    /// </summary>
     private static readonly (string Sym, string Code, string Name)[] Symbols = new[]
     {
-        ("Sym1", "WILD", "Wild"),
-        ("Sym2", "BAR", "Bar"),
-        ("Sym3", "SEVEN", "Seven"),
-        ("Sym4", "RED", "Red Gem"),
-        ("Sym5", "PURPLE", "Purple Gem"),
-        ("Sym6", "BLUE", "Blue Gem"),
-        ("Sym7", "GREEN", "Green Gem"),
-        ("Sym8", "ORANGE", "Orange Gem")
+        ("Sym1", "WILD", "Wild"),         // Special symbol - expands and triggers respins
+        ("Sym2", "BAR", "Bar"),           // Highest paying regular symbol
+        ("Sym3", "SEVEN", "Seven"),       // Second highest paying
+        ("Sym4", "RED", "Red Gem"),       // Low-paying gem
+        ("Sym5", "PURPLE", "Purple Gem"), // Low-paying gem
+        ("Sym6", "BLUE", "Blue Gem"),     // Low-paying gem
+        ("Sym7", "GREEN", "Green Gem"),   // Low-paying gem
+        ("Sym8", "ORANGE", "Orange Gem")  // Low-paying gem
     };
 
+    // ═══════════════════════════════════════════════════════════════════════════════════════════
+    // CONSTRUCTOR
+    // ═══════════════════════════════════════════════════════════════════════════════════════════
+    
+    /// <summary>
+    /// Creates a new OutcomeTester instance.
+    /// </summary>
+    /// <param name="configPath">
+    /// Path to the game configuration directory containing starburst.json and starburstReelsets.json
+    /// </param>
     public OutcomeTester(string configPath)
     {
         _configPath = configPath;
         _configLoader = new GameConfigurationLoader(configPath);
-        _httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
     }
 
     public async Task RunInteractiveMode()
@@ -98,29 +194,23 @@ public sealed class OutcomeTester
             Console.WriteLine("                              MAIN MENU                                        ");
             Console.WriteLine("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
             Console.WriteLine();
-            Console.WriteLine($"  RGS URL:    {_rgsBaseUrl}");
-            Console.WriteLine($"  Session:    {(_currentSessionId != null ? $"{_currentSessionId} (Balance: R{_sessionBalance:N2})" : "Not connected")}");
-            Console.WriteLine($"  Browser:    {(_browserConnected ? "✓ Connected" : "Not connected")}");
+            Console.WriteLine($"  Browser: {(_browserConnected ? "✓ Connected" : "Not connected")}");
             Console.WriteLine();
-            Console.WriteLine("  ─── BROWSER CONTROL (Spin from Console!) ───");
-            Console.WriteLine("  1. Test specific payline win (SPINS THE GAME!)");
-            Console.WriteLine("  2. Connect to Browser (Chrome)");
+            Console.WriteLine("  ─── SINGLE PAYLINE WIN ───");
+            Console.WriteLine("  1. Test specific payline win (BROWSER - spins the game)");
+            Console.WriteLine("  2. Test specific payline win (LOCAL - simulation only)");
             Console.WriteLine();
-            Console.WriteLine("  ─── RGS SESSION ───");
-            Console.WriteLine("  3. Connect to RGS / Start new session");
-            Console.WriteLine("  4. Use existing session (paste SessionId)");
+            Console.WriteLine("  ─── MULTI-PAYLINE WIN ───");
+            Console.WriteLine("  3. Test MULTIPLE paylines winning at once (BROWSER)");
+            Console.WriteLine("  4. Test MULTIPLE paylines winning at once (LOCAL)");
             Console.WriteLine();
-            Console.WriteLine("  ─── LOCAL SIMULATION ───");
-            Console.WriteLine("  5. Test specific payline win (LOCAL - simulation only)");
-            Console.WriteLine();
-            Console.WriteLine("  ─── MULTI-PAYLINE TESTING ───");
-            Console.WriteLine("  6. Test MULTIPLE paylines winning at once (BROWSER)");
-            Console.WriteLine("  7. Test MULTIPLE paylines winning at once (LOCAL)");
+            Console.WriteLine("  ─── BROWSER ───");
+            Console.WriteLine("  5. Connect/Launch Browser (Chrome)");
             Console.WriteLine();
             Console.WriteLine("  ─── INFORMATION ───");
-            Console.WriteLine("  8. Show all paylines");
-            Console.WriteLine("  9. Show all symbols with paytable");
-            Console.WriteLine("  10. Show reel strips");
+            Console.WriteLine("  6. Show all paylines");
+            Console.WriteLine("  7. Show all symbols with paytable");
+            Console.WriteLine("  8. Show reel strips");
             Console.WriteLine();
             Console.WriteLine("  0. Exit");
             Console.WriteLine();
@@ -134,30 +224,24 @@ public sealed class OutcomeTester
                     await TestSpecificWinBrowser(config);
                     break;
                 case "2":
-                    await ConnectToBrowser();
-                    break;
-                case "3":
-                    await ConnectToRgs();
-                    break;
-                case "4":
-                    UseExistingSession();
-                    break;
-                case "5":
                     await TestSpecificWin(config);
                     break;
-                case "6":
+                case "3":
                     await TestMultiPaylineWinBrowser(config);
                     break;
-                case "7":
+                case "4":
                     await TestMultiPaylineWinLocal(config);
                     break;
-                case "8":
+                case "5":
+                    await ConnectToBrowser();
+                    break;
+                case "6":
                     ShowAllPaylines();
                     break;
-                case "9":
+                case "7":
                     ShowAllSymbols(config);
                     break;
-                case "10":
+                case "8":
                     ShowReelStrips(config);
                     break;
                 case "0":
@@ -362,350 +446,6 @@ public sealed class OutcomeTester
 
         Console.WriteLine("\n  Press Enter to continue...");
         Console.ReadLine();
-    }
-
-    // ═══════════════════════════════════════════════════════════════════════════════════════════════
-    // LIVE MODE METHODS
-    // ═══════════════════════════════════════════════════════════════════════════════════════════════
-
-    private async Task ConnectToRgs()
-    {
-        Console.WriteLine();
-        Console.WriteLine("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-        Console.WriteLine("                          CONNECT TO RGS                                        ");
-        Console.WriteLine("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-        Console.WriteLine();
-        Console.WriteLine($"  Current RGS URL: {_rgsBaseUrl}");
-        Console.Write("  Enter new RGS URL (or press Enter to keep current): ");
-        
-        var newUrl = Console.ReadLine()?.Trim();
-        if (!string.IsNullOrEmpty(newUrl))
-        {
-            _rgsBaseUrl = newUrl.TrimEnd('/');
-        }
-
-        Console.WriteLine();
-        Console.WriteLine("  Starting new session with funMode=1 (demo mode)...");
-
-        try
-        {
-            var startRequest = new
-            {
-                funMode = 1,
-                token = "SIMULATOR_TEST"
-            };
-
-            var response = await _httpClient.PostAsJsonAsync($"{_rgsBaseUrl}/test/starburst/start", startRequest);
-            var responseText = await response.Content.ReadAsStringAsync();
-            
-            if (!response.IsSuccessStatusCode)
-            {
-                Console.WriteLine($"\n  ❌ Failed to connect: {response.StatusCode}");
-                Console.WriteLine($"     Response: {responseText}");
-                Console.WriteLine("\n  Press Enter to continue...");
-                Console.ReadLine();
-                return;
-            }
-
-            var jsonDoc = JsonDocument.Parse(responseText);
-            var root = jsonDoc.RootElement;
-
-            // Try to extract sessionId from response
-            if (root.TryGetProperty("sessionId", out var sessionIdProp))
-            {
-                _currentSessionId = sessionIdProp.GetString();
-            }
-            else if (root.TryGetProperty("data", out var dataProp) && dataProp.TryGetProperty("sessionId", out var dataSessionId))
-            {
-                _currentSessionId = dataSessionId.GetString();
-            }
-
-            // Try to extract balance
-            if (root.TryGetProperty("balance", out var balanceProp))
-            {
-                _sessionBalance = balanceProp.GetDecimal();
-            }
-            else if (root.TryGetProperty("data", out var dataProp2) && dataProp2.TryGetProperty("balance", out var dataBalance))
-            {
-                _sessionBalance = dataBalance.GetDecimal();
-            }
-
-            if (_currentSessionId != null)
-            {
-                Console.WriteLine();
-                Console.WriteLine($"  ✓ Connected successfully!");
-                Console.WriteLine($"    Session ID: {_currentSessionId}");
-                Console.WriteLine($"    Balance:    R{_sessionBalance:N2}");
-                Console.WriteLine();
-                Console.WriteLine("  You can now use option 1 to test specific outcomes on the live game!");
-            }
-            else
-            {
-                Console.WriteLine();
-                Console.WriteLine("  ⚠ Connected but could not extract session ID from response.");
-                Console.WriteLine($"    Raw response: {responseText}");
-            }
-        }
-        catch (HttpRequestException ex)
-        {
-            Console.WriteLine($"\n  ❌ Connection failed: {ex.Message}");
-            Console.WriteLine("     Make sure the RGS is running at the specified URL.");
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"\n  ❌ Error: {ex.Message}");
-        }
-
-        Console.WriteLine("\n  Press Enter to continue...");
-        Console.ReadLine();
-    }
-
-    private void UseExistingSession()
-    {
-        Console.WriteLine();
-        Console.WriteLine("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-        Console.WriteLine("                       USE EXISTING SESSION                                     ");
-        Console.WriteLine("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-        Console.WriteLine();
-        Console.WriteLine("  To find your session ID:");
-        Console.WriteLine("  1. Open your browser's Developer Tools (F12)");
-        Console.WriteLine("  2. Go to Network tab");
-        Console.WriteLine("  3. Look for /play or /start requests");
-        Console.WriteLine("  4. Find 'sessionId' in the request or response");
-        Console.WriteLine();
-        Console.Write("  Enter Session ID: ");
-
-        var sessionId = Console.ReadLine()?.Trim();
-        if (string.IsNullOrEmpty(sessionId))
-        {
-            Console.WriteLine("\n  No session ID provided. Returning to menu.");
-            return;
-        }
-
-        _currentSessionId = sessionId;
-        Console.WriteLine();
-        Console.WriteLine($"  ✓ Session ID set: {_currentSessionId}");
-        Console.WriteLine("  Note: Make sure this session was started with funMode=1 for custom grids to work.");
-        Console.WriteLine();
-        Console.WriteLine("  Press Enter to continue...");
-        Console.ReadLine();
-    }
-
-    private async Task TestSpecificWinLive(GameConfiguration config)
-    {
-        Console.WriteLine();
-        Console.WriteLine("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-        Console.WriteLine("                    TEST SPECIFIC WIN (LIVE MODE)                               ");
-        Console.WriteLine("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-        Console.WriteLine();
-        Console.WriteLine($"  Session: {_currentSessionId ?? "Not connected"}");
-        Console.WriteLine();
-
-        // Select payline
-        var paylineResult = SelectPayline();
-        if (paylineResult == null) return;
-        var (paylineNum, payline) = paylineResult.Value;
-
-        // Select symbol
-        var symbolResult = SelectSymbol(config);
-        if (symbolResult == null) return;
-        var selectedSymbol = symbolResult.Value;
-
-        // Select match count
-        var matchCountResult = SelectMatchCount(config, selectedSymbol);
-        if (matchCountResult == null) return;
-        var matchCount = matchCountResult.Value;
-
-        // Find valid grid
-        Console.WriteLine();
-        Console.WriteLine("  STEP 4: Searching for Valid Grid...");
-        Console.WriteLine("  ─────────────────────────────────────────────────────────────────────────────");
-
-        var gridResult = FindValidGrid(config, paylineNum, selectedSymbol.Sym, matchCount);
-
-        if (gridResult == null)
-        {
-            Console.WriteLine();
-            Console.WriteLine($"  ❌ RESULT: Cannot achieve {matchCount}x {selectedSymbol.Code} win on Payline {paylineNum}");
-            Console.WriteLine($"     with the current reel strips.");
-            Console.WriteLine("\n  Press Enter to continue...");
-            Console.ReadLine();
-            return;
-        }
-
-        // Convert grid to symbol IDs
-        // 0-based for engine (0=WILD, 1=BAR, etc.)
-        var customGridZeroBased = ConvertGridToSymbolIds(gridResult.Grid, config);
-        // 1-based for frontend info panel (1=WILD, 2=BAR, etc.)  
-        var customGridOneBased = customGridZeroBased.Select(id => id + 1).ToArray();
-        
-        Console.WriteLine();
-        Console.WriteLine($"  ✓ FOUND: Valid grid for {matchCount}x {selectedSymbol.Code} on Payline {paylineNum}");
-        Console.WriteLine();
-
-        // Show the reel strip positions being used (proves this is from the actual reelset)
-        Console.WriteLine("  ┌─────────────────────────────────────────────────────────────────────────────┐");
-        Console.WriteLine("  │                    REEL STRIP POSITIONS (From Reelset)                     │");
-        Console.WriteLine("  └─────────────────────────────────────────────────────────────────────────────┘");
-        Console.WriteLine();
-        Console.WriteLine($"  Start positions: [{string.Join(", ", gridResult.ReelPositions)}]");
-        Console.WriteLine();
-        var reelStrips = config.ReelLibrary.High;
-        for (int col = 0; col < config.Board.Columns; col++)
-        {
-            var strip = reelStrips[col];
-            var startPos = gridResult.ReelPositions[col];
-            var visibleSymbols = new List<string>();
-            for (int row = 0; row < 3; row++)
-            {
-                var idx = (startPos + row) % strip.Count;
-                var sym = strip[idx];
-                var symDef = config.SymbolCatalog.FirstOrDefault(s => s.Sym == sym);
-                visibleSymbols.Add(symDef?.Code ?? sym);
-            }
-            Console.WriteLine($"  Reel {col + 1}: Strip[{startPos}..{(startPos + 2) % strip.Count}] = [{string.Join(", ", visibleSymbols)}]");
-        }
-        Console.WriteLine();
-        Console.ForegroundColor = ConsoleColor.DarkGray;
-        Console.WriteLine("  (These positions are taken directly from starburstReelsets.json)");
-        Console.ResetColor();
-        Console.WriteLine();
-
-        // Display the grid visually
-        DisplayGrid(gridResult.Grid, config, payline, paylineNum, matchCount);
-
-        // Show the grid arrays
-        Console.WriteLine();
-        Console.WriteLine("  ┌─────────────────────────────────────────────────────────────────────────────┐");
-        Console.WriteLine("  │                      CUSTOM GRID FOR FRONTEND                              │");
-        Console.WriteLine("  └─────────────────────────────────────────────────────────────────────────────┘");
-        Console.WriteLine();
-        Console.WriteLine("  Grid Format (1-8 for Info Panel):");
-        Console.WriteLine($"  [{string.Join(",", customGridOneBased)}]");
-        Console.WriteLine();
-        Console.WriteLine("  ─────────────────────────────────────────────────────────────────────────────");
-        Console.WriteLine("  HOW TO USE ON FRONTEND:");
-        Console.WriteLine("  ─────────────────────────────────────────────────────────────────────────────");
-        Console.WriteLine();
-        Console.WriteLine("  OPTION A: Use Info Panel");
-        Console.WriteLine("    1. Open the Info Panel on your game");
-        Console.WriteLine("    2. Enter/paste the grid above into the custom grid input");
-        Console.WriteLine("    3. Click Apply");
-        Console.WriteLine("    4. Click Spin");
-        Console.WriteLine();
-        Console.WriteLine("  OPTION B: Browser Console (F12)");
-        Console.WriteLine("    Copy and paste this command into the browser console:");
-        Console.WriteLine();
-        Console.ForegroundColor = ConsoleColor.Cyan;
-        Console.WriteLine($"    sessionStorage.setItem('customFunModeGrid', '[{string.Join(",", customGridOneBased)}]');");
-        Console.ResetColor();
-        Console.WriteLine();
-        Console.WriteLine("    Then click Spin on the game.");
-        Console.WriteLine();
-
-        // Ask if user wants to also send via HTTP
-        Console.WriteLine("  ─────────────────────────────────────────────────────────────────────────────");
-        Console.Write("  Also send spin request via HTTP? (y/n): ");
-        var sendHttp = Console.ReadLine()?.Trim().ToLower() == "y";
-
-        if (sendHttp)
-        {
-            if (_currentSessionId == null)
-            {
-                Console.WriteLine();
-                Console.WriteLine("  ❌ No session connected for HTTP request.");
-                Console.WriteLine("     Use option 2 or 3 to connect a session first.");
-            }
-            else
-            {
-                await SendLiveSpinRequest(config, customGridZeroBased, paylineNum, selectedSymbol.Code, matchCount);
-            }
-        }
-
-        Console.WriteLine("\n  Press Enter to continue...");
-        Console.ReadLine();
-    }
-
-    private async Task SendLiveSpinRequest(GameConfiguration config, int[] customGrid, int paylineNum, string symbolCode, int matchCount)
-    {
-        Console.WriteLine();
-        Console.WriteLine("  ┌─────────────────────────────────────────────────────────────────────────────┐");
-        Console.WriteLine("  │                     SENDING TO LIVE GAME                                   │");
-        Console.WriteLine("  └─────────────────────────────────────────────────────────────────────────────┘");
-        Console.WriteLine();
-
-        try
-        {
-            var playRequest = new
-            {
-                sessionId = _currentSessionId,
-                baseBet = 1.0m,
-                betMode = "standard",
-                bets = new[] { new { betType = "main", amount = 1.0m } },
-                userPayload = new { customFunModeGrid = customGrid }
-            };
-
-            var jsonOptions = new JsonSerializerOptions { WriteIndented = true };
-            var requestJson = JsonSerializer.Serialize(playRequest, jsonOptions);
-            Console.WriteLine("  Request:");
-            Console.WriteLine($"  POST {_rgsBaseUrl}/test/starburst/play");
-            Console.WriteLine();
-
-            var response = await _httpClient.PostAsJsonAsync($"{_rgsBaseUrl}/test/starburst/play", playRequest);
-            var responseText = await response.Content.ReadAsStringAsync();
-
-            Console.WriteLine($"  Response Status: {response.StatusCode}");
-            Console.WriteLine();
-
-            try
-            {
-                var jsonDoc = JsonDocument.Parse(responseText);
-                var root = jsonDoc.RootElement;
-
-                // Extract key values
-                Console.WriteLine("  ─── RESULT ───");
-                
-                decimal winAmount = 0;
-                if (root.TryGetProperty("win", out var winProp))
-                {
-                    winAmount = winProp.GetDecimal();
-                }
-                else if (root.TryGetProperty("data", out var dataProp) && dataProp.TryGetProperty("win", out var dataWin))
-                {
-                    winAmount = dataWin.GetDecimal();
-                }
-                
-                if (root.TryGetProperty("balance", out var balProp))
-                {
-                    _sessionBalance = balProp.GetDecimal();
-                }
-                else if (root.TryGetProperty("data", out var dataProp2) && dataProp2.TryGetProperty("balance", out var dataBal))
-                {
-                    _sessionBalance = dataBal.GetDecimal();
-                }
-
-                Console.WriteLine($"  Win Amount:  R{winAmount:F2}");
-                Console.WriteLine($"  New Balance: R{_sessionBalance:F2}");
-                Console.WriteLine();
-                Console.WriteLine($"  ✓ Spin executed for {matchCount}x {symbolCode} on Payline {paylineNum}!");
-                Console.WriteLine();
-                Console.WriteLine("  NOTE: The frontend won't auto-update from this HTTP call.");
-                Console.WriteLine("        Use the sessionStorage method above for visual testing.");
-            }
-            catch
-            {
-                Console.WriteLine($"  Raw Response: {responseText}");
-            }
-        }
-        catch (HttpRequestException ex)
-        {
-            Console.WriteLine($"  ❌ Request failed: {ex.Message}");
-            Console.WriteLine("     Make sure the RGS is running.");
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"  ❌ Error: {ex.Message}");
-        }
     }
 
     private (int paylineNum, int[] payline)? SelectPayline()
@@ -963,33 +703,124 @@ public sealed class OutcomeTester
         await ExecuteAndShowResult(config, result, paylineNum, selectedSymbol, matchCount);
     }
 
+    // ═══════════════════════════════════════════════════════════════════════════════════════════
+    // CORE ALGORITHM: FindValidGrid
+    // ═══════════════════════════════════════════════════════════════════════════════════════════
+    //
+    // This is the heart of the outcome tester. Given a payline, symbol, and match count,
+    // it searches the reel strips to find positions that will produce exactly that win.
+    //
+    // ALGORITHM OVERVIEW:
+    // ═══════════════════
+    // 1. For each reel, scan all possible start positions (0 to strip.Length-1)
+    // 2. Check if each position satisfies the constraints:
+    //    - Winning reels (0 to matchCount-1): Must have target symbol at payline row
+    //    - Breaker reel (matchCount): Must NOT have target symbol (to stop the win)
+    //    - All reels: NO WILD symbols anywhere (to prevent respin feature)
+    // 3. If all reels have at least one valid position, pick the first valid combination
+    // 4. Build the 3x5 grid from the selected positions
+    //
+    // EXAMPLE:
+    // ════════
+    // Input: Payline 1 (middle row), RED symbol, 3-match
+    // 
+    // Payline 1 = [1, 1, 1, 1, 1] = middle row on all reels
+    // 
+    // Constraints:
+    //   Reel 0: Symbol at row 1 must be RED
+    //   Reel 1: Symbol at row 1 must be RED
+    //   Reel 2: Symbol at row 1 must be RED
+    //   Reel 3: Symbol at row 1 must NOT be RED (stops the win at 3)
+    //   Reel 4: Any symbol (doesn't affect 3-match from left)
+    //   All reels: No WILD in any visible row
+    //
+    // The algorithm searches each reel strip and finds positions that satisfy these rules.
+    //
+    // WHY NO WILDS?
+    // ═════════════
+    // Starburst has an "Expanding Wilds" feature. When a WILD appears, it expands to fill
+    // the entire reel and triggers respins. For testing specific payline wins, we want to
+    // avoid triggering this feature, so we exclude all positions that would show a WILD.
+    //
+    // ═══════════════════════════════════════════════════════════════════════════════════════════
+    
+    /// <summary>
+    /// Searches the reel strips to find positions that produce a specific win.
+    /// 
+    /// This is a CONSTRAINT SATISFACTION problem:
+    /// - Winning reels must show the target symbol at the payline position
+    /// - Breaker reel must NOT show the target symbol (to stop the win at exact count)
+    /// - No WILD symbols can appear (to avoid triggering expanding wilds)
+    /// </summary>
+    /// <param name="config">Game configuration containing reel strips and board dimensions</param>
+    /// <param name="paylineNum">Which payline (1-10, human-readable)</param>
+    /// <param name="targetSym">Which symbol to win with (e.g., "Sym4" for RED)</param>
+    /// <param name="matchCount">How many consecutive matches (3, 4, or 5)</param>
+    /// <returns>
+    /// GridSearchResult containing reel positions and the resulting grid,
+    /// or null if the configuration is impossible
+    /// </returns>
     private GridSearchResult? FindValidGrid(GameConfiguration config, int paylineNum, string targetSym, int matchCount)
     {
+        // ─────────────────────────────────────────────────────────────────────────────────────
+        // STEP 1: Get payline definition and reel strips
+        // ─────────────────────────────────────────────────────────────────────────────────────
+        
+        // Convert from 1-based (user input) to 0-based (array index)
         var payline = Paylines[paylineNum - 1];
-        var reelStrips = config.ReelLibrary.High; // Use the base reel set
+        
+        // Get the reel strips from configuration
+        // ReelLibrary.High is the standard reel set (40 symbols per reel)
+        var reelStrips = config.ReelLibrary.High;
+        
+        // Board dimensions (typically 3 rows, 5 columns for Starburst)
         var rows = config.Board.Rows;
-        const string WILD_SYM = "Sym1"; // WILD symbol
+        
+        // WILD symbol identifier - we must exclude this to prevent expanding wilds
+        const string WILD_SYM = "Sym1";
 
-        // We need to find reel start positions such that:
-        // - For reels 0 to (matchCount-1): the symbol at payline row position is EXACTLY targetSym (NO WILD!)
-        // - For reel matchCount (if matchCount < 5): the symbol should NOT be targetSym or WILD (to stop the win)
-        // - NO WILD symbols anywhere in the entire grid (to prevent respin feature from triggering)
-
-        // For each reel, build a list of valid start positions
+        // ─────────────────────────────────────────────────────────────────────────────────────
+        // STEP 2: For each reel, find all valid start positions
+        // ─────────────────────────────────────────────────────────────────────────────────────
+        //
+        // A "start position" is the index in the reel strip where the visible window begins.
+        // The visible window shows 3 consecutive symbols (rows 0, 1, 2).
+        //
+        // Example with strip length 40 and startPos = 38:
+        //   Row 0 (Top):    strip[(38 + 0) % 40] = strip[38]
+        //   Row 1 (Middle): strip[(38 + 1) % 40] = strip[39]
+        //   Row 2 (Bottom): strip[(38 + 2) % 40] = strip[0]  <- wraps around!
+        //
+        // ─────────────────────────────────────────────────────────────────────────────────────
+        
+        // List of valid positions for each reel
         var validPositions = new List<List<int>>();
 
+        // Iterate through each reel (0 to 4 for a 5-reel game)
         for (int reelIdx = 0; reelIdx < config.Board.Columns; reelIdx++)
         {
+            // Get the reel strip for this reel (list of ~40 symbol IDs)
             var strip = reelStrips[reelIdx];
-            var targetRow = payline[reelIdx]; // Row position on this reel for the payline
+            
+            // Which row does the payline pass through on this reel?
+            var targetRow = payline[reelIdx];
+            
+            // List to collect valid start positions for this reel
             var validForReel = new List<int>();
 
+            // Try every possible start position on this reel
             for (int startPos = 0; startPos < strip.Count; startPos++)
             {
-                // First check: NO WILD symbols anywhere in the visible window (3 rows)
+                // ─────────────────────────────────────────────────────────────────────────────
+                // CHECK 1: No WILD symbols in the visible window
+                // ─────────────────────────────────────────────────────────────────────────────
+                // We check all 3 visible rows to ensure no WILD appears.
+                // This prevents the expanding wilds feature from triggering.
+                
                 bool hasWild = false;
                 for (int row = 0; row < rows; row++)
                 {
+                    // Calculate index with wraparound (modulo)
                     var idx = (startPos + row) % strip.Count;
                     if (strip[idx] == WILD_SYM)
                     {
@@ -1000,16 +831,25 @@ public sealed class OutcomeTester
                 
                 if (hasWild)
                 {
-                    continue; // Skip this position - it would show a WILD
+                    // Skip this position - it would show a WILD symbol
+                    continue;
                 }
 
-                // Calculate which symbol appears at targetRow when starting at startPos
+                // ─────────────────────────────────────────────────────────────────────────────
+                // CHECK 2: Symbol constraint based on reel role
+                // ─────────────────────────────────────────────────────────────────────────────
+                
+                // Calculate which symbol appears at the payline's row for this start position
                 var symbolIdx = (startPos + targetRow) % strip.Count;
                 var symbolAtRow = strip[symbolIdx];
 
                 if (reelIdx < matchCount)
                 {
-                    // For winning reels: symbol must be EXACTLY the target (no WILD substitutes!)
+                    // ─────────────────────────────────────────────────────────────────────────
+                    // WINNING REEL: Symbol at payline row MUST be the target symbol
+                    // ─────────────────────────────────────────────────────────────────────────
+                    // For a 3-match win on reels 0, 1, 2, each must show the target symbol.
+                    
                     if (symbolAtRow == targetSym)
                     {
                         validForReel.Add(startPos);
@@ -1017,7 +857,12 @@ public sealed class OutcomeTester
                 }
                 else if (reelIdx == matchCount && matchCount < 5)
                 {
-                    // For the reel after the win: symbol must NOT be target or WILD (to stop the win)
+                    // ─────────────────────────────────────────────────────────────────────────
+                    // BREAKER REEL: Symbol must NOT be target (to stop the win)
+                    // ─────────────────────────────────────────────────────────────────────────
+                    // For a 3-match, reel 3 must have a DIFFERENT symbol to stop the win.
+                    // (For 5-match, there is no breaker reel)
+                    
                     if (symbolAtRow != targetSym && symbolAtRow != WILD_SYM)
                     {
                         validForReel.Add(startPos);
@@ -1025,50 +870,70 @@ public sealed class OutcomeTester
                 }
                 else
                 {
-                    // Remaining reels: any position is fine (as long as no WILD, which we already checked)
+                    // ─────────────────────────────────────────────────────────────────────────
+                    // NON-PARTICIPATING REEL: Any symbol is fine
+                    // ─────────────────────────────────────────────────────────────────────────
+                    // Reels after the breaker don't affect the win evaluation.
+                    // (We already checked for no WILD, so any position is valid)
+                    
                     validForReel.Add(startPos);
                 }
             }
 
             validPositions.Add(validForReel);
 
+            // ─────────────────────────────────────────────────────────────────────────────────
+            // EARLY EXIT: If a required reel has no valid positions, return null
+            // ─────────────────────────────────────────────────────────────────────────────────
             if (validForReel.Count == 0 && reelIdx <= matchCount)
             {
-                // No valid position for a required reel
+                // This configuration is IMPOSSIBLE with the current reel strips
                 return null;
             }
         }
 
-        // Now pick one valid position from each reel
+        // ─────────────────────────────────────────────────────────────────────────────────────
+        // STEP 3: Select one valid position from each reel
+        // ─────────────────────────────────────────────────────────────────────────────────────
+        // We simply pick the first valid position. A more sophisticated version could
+        // try different combinations or pick randomly.
+        
         var selectedPositions = new int[config.Board.Columns];
         for (int i = 0; i < config.Board.Columns; i++)
         {
             if (validPositions[i].Count > 0)
             {
-                selectedPositions[i] = validPositions[i][0]; // Pick first valid
+                selectedPositions[i] = validPositions[i][0]; // Pick first valid position
             }
             else
             {
-                return null;
+                return null; // Should not happen if we checked earlier
             }
         }
 
-        // Build the grid
+        // ─────────────────────────────────────────────────────────────────────────────────────
+        // STEP 4: Build the 3x5 grid from selected positions
+        // ─────────────────────────────────────────────────────────────────────────────────────
+        // The grid stores symbol IDs (e.g., "Sym4", "Sym6") for each position.
+        // Grid is indexed as [row, column] where row 0 = top, row 2 = bottom.
+        
         var grid = new string[rows, config.Board.Columns];
         for (int col = 0; col < config.Board.Columns; col++)
         {
             var strip = reelStrips[col];
             for (int row = 0; row < rows; row++)
             {
+                // Calculate strip index with wraparound
                 var idx = (selectedPositions[col] + row) % strip.Count;
                 grid[row, col] = strip[idx];
             }
         }
 
+        // Return the result containing both the reel positions and the resulting grid
         return new GridSearchResult
         {
-            ReelPositions = selectedPositions,
-            Grid = grid
+            ReelPositions = selectedPositions,  // Useful for verification
+            Grid = grid                          // The actual 3x5 symbol grid
         };
     }
 

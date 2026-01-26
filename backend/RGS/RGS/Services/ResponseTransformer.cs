@@ -164,7 +164,7 @@ public static class ResponseTransformer
                 RoundWin: engineResponse.FeatureWin.Amount,
                 TotalWin: freeSpins?.FeatureWin.Amount ?? 0,
                 TotalBet: 0,
-                Won: engineResponse.FreeSpinsAwarded > 0 ? engineResponse.Win.Amount : 0),
+                Won: engineResponse.FreeSpins > 0 ? engineResponse.Win.Amount : 0),
             PromoFreeSpins: new ClientPlayPromoFreeSpins(0, 0, 0, 0, 0, 0),
             Jackpots: Array.Empty<object>(),
             Feature: new ClientPlayFeature(

@@ -1,3 +1,40 @@
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// BrowserController.cs - Playwright Browser Automation
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+//
+// PURPOSE:
+//   Automates Chrome browser to trigger spins on the frontend game with custom grids.
+//   Uses Microsoft Playwright for reliable cross-browser automation.
+//
+// WHAT IS PLAYWRIGHT?
+//   Playwright is a browser automation library from Microsoft.
+//   It can control Chrome, Firefox, and Safari programmatically.
+//   Think of it like a "robot" that can click buttons, type text, and read web pages.
+//
+// HOW THE CUSTOM GRID FLOW WORKS:
+//   1. Simulator calculates a grid that produces a specific win
+//   2. BrowserController sets the grid in browser's sessionStorage
+//   3. BrowserController triggers a spin (keyboard press or API call)
+//   4. Frontend reads the custom grid from sessionStorage
+//   5. Frontend sends it to the RGS in the play request
+//   6. RGS forwards to Engine with funMode=1
+//   7. Engine uses custom grid instead of random RNG
+//   8. Result displays on screen!
+//
+// PLAYWRIGHT OBJECT HIERARCHY:
+//   IPlaywright (library instance)
+//       └── IBrowser (Chrome process)
+//             └── IBrowserContext (like incognito window)
+//                   └── IPage (a single tab/page)
+//
+// WHY USE PLAYWRIGHT INSTEAD OF SELENIUM?
+//   - Playwright is faster and more reliable
+//   - Built-in auto-waiting (no flaky tests)
+//   - Better support for modern web apps (React, PixiJS)
+//   - Cross-browser with single API
+//
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+
 using Microsoft.Playwright;
 using System.Diagnostics;
 
@@ -6,18 +43,67 @@ namespace Simulator;
 /// <summary>
 /// Controls the browser to trigger spins on the frontend game.
 /// Uses Playwright to launch and control Chrome automatically.
+/// 
+/// Usage:
+///   var controller = new BrowserController();
+///   await controller.LaunchAsync("http://localhost:3030/?funMode=1");
+///   await controller.SetGridAndSpinAsync(new[] { 1, 2, 3, 4, 5, ... }); // 15 elements
+///   await controller.DisposeAsync();
+/// 
+/// Implements IAsyncDisposable for proper cleanup of browser resources.
 /// </summary>
 public sealed class BrowserController : IAsyncDisposable
 {
+    // ═══════════════════════════════════════════════════════════════════════════════════════════
+    // PLAYWRIGHT OBJECTS - Hierarchy: Playwright → Browser → Context → Page
+    // ═══════════════════════════════════════════════════════════════════════════════════════════
+    
+    /// <summary>
+    /// Main Playwright instance. Created once, used to launch browsers.
+    /// </summary>
     private IPlaywright? _playwright;
+    
+    /// <summary>
+    /// The Chrome browser instance (actual browser process).
+    /// </summary>
     private IBrowser? _browser;
+    
+    /// <summary>
+    /// Browser context - like an incognito window.
+    /// Each context has isolated cookies, storage, etc.
+    /// </summary>
     private IBrowserContext? _context;
+    
+    /// <summary>
+    /// The web page we're controlling (a single browser tab).
+    /// This is where we navigate, click buttons, and execute JavaScript.
+    /// </summary>
     private IPage? _page;
+    
+    // ═══════════════════════════════════════════════════════════════════════════════════════════
+    // STATE TRACKING
+    // ═══════════════════════════════════════════════════════════════════════════════════════════
+    
+    /// <summary>
+    /// URL of the game page. Includes funMode=1 to enable custom grids.
+    /// </summary>
     private string _gameUrl = "http://localhost:3030/?funMode=1";
+    
+    /// <summary>
+    /// True if we have a working browser connection.
+    /// </summary>
     private bool _isConnected;
+    
+    /// <summary>
+    /// True if we launched the browser (vs connecting to existing).
+    /// If true, we should close the browser when disposing.
+    /// </summary>
     private bool _ownsBrowser;
 
+    /// <summary>Gets whether we have an active browser connection.</summary>
     public bool IsConnected => _isConnected;
+    
+    /// <summary>Gets the current game URL.</summary>
     public string GameUrl => _gameUrl;
 
     /// <summary>

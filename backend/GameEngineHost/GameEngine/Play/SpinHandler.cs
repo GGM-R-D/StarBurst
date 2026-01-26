@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using GameEngine.Configuration;
@@ -49,7 +50,22 @@ public sealed class SpinHandler
         var roundId = CreateRoundId();
         Console.WriteLine($"[SpinHandler] RoundId created: {roundId}");
         
+        // ═══════════════════════════════════════════════════════════════════════════════════════
+        // STATE RESTORATION: Per RGS spec, try EngineState first, then lastResponse as fallback
+        // This supports platforms that forward lastResponse instead of maintaining EngineState
+        // ═══════════════════════════════════════════════════════════════════════════════════════
         var nextState = request.EngineState?.Clone() ?? EngineSessionState.Create();
+        
+        // If EngineState was null but lastResponse is provided, try to restore from it
+        if (request.EngineState is null && request.LastResponse.HasValue)
+        {
+            var restoredState = TryRestoreStateFromLastResponse(request.LastResponse.Value);
+            if (restoredState != null)
+            {
+                Console.WriteLine("[SpinHandler] Restored state from lastResponse.results.feature");
+                nextState = restoredState;
+            }
+        }
         
         // CRITICAL: Clear respin state if it's invalid or exhausted BEFORE determining spin mode
         // This prevents stale respin state from incorrectly setting spinMode to Respin
@@ -85,9 +101,15 @@ public sealed class SpinHandler
         
         Console.WriteLine($"[SpinHandler] SpinMode: {spinMode}, RespinsRemaining: {nextState.Respins?.RespinsRemaining ?? 0}, LockedReels: {(nextState.Respins?.LockedWildReels != null && nextState.Respins.LockedWildReels.Count > 0 ? string.Join(",", nextState.Respins.LockedWildReels.Select(r => r + 1)) : "none")}, RequestHadRespinState: {request.EngineState?.Respins != null}");
 
-        // Use bet field if provided (per RGS spec), otherwise use TotalBet
-        // bet = calculated total bet as sum of all amounts in bets array
+        // Per RGS spec, accept 'bet' as primary, 'totalBet' as fallback
+        // If neither provided, calculate from bets[].amount sum
         var effectiveBet = request.Bet ?? request.TotalBet;
+        if (effectiveBet.Amount <= 0 && request.Bets?.Count > 0)
+        {
+            var calculatedTotal = request.Bets.Sum(b => b.Amount.Amount);
+            effectiveBet = new Money(calculatedTotal);
+            Console.WriteLine($"[SpinHandler] Using calculated bet from bets array: {calculatedTotal}");
+        }
 
         var buyCost = request.IsFeatureBuy
             ? Money.FromBet(request.BaseBet.Amount, configuration.BuyFeature.CostMultiplier)
@@ -525,23 +547,42 @@ public sealed class SpinHandler
             ? customGridValidationError 
             : "Request processed successfully";
         
+        // ═══════════════════════════════════════════════════════════════════════════════════════
+        // RGS COMPLIANCE: Calculate stops, add coordinates, create results feature
+        // ═══════════════════════════════════════════════════════════════════════════════════════
+        
+        // Calculate actual reel stop positions for frontend animation
+        var stops = randomContext.CalculateStops(reelStrips, lockedReelsForBoardCreation);
+        Console.WriteLine($"[SpinHandler] Reel stops calculated: [{string.Join(", ", stops)}]");
+        
+        // Add x/y coordinates to all wins for frontend animation
+        var winsWithCoordinates = AddCoordinatesToWins(wins, configuration.Board.Columns, configuration.Board.Rows);
+        Console.WriteLine($"[SpinHandler] Added coordinates to {winsWithCoordinates.Count} wins");
+        
+        // Create ResultsFeature for safe forwarding to frontend (inside results object)
+        var resultsFeature = CreateResultsFeature(featureOutcome, nextState, initialGrid);
+        
         var response = new PlayResponse(
             StatusCode: 200,
             Win: totalWin,
             ScatterWin: Money.Zero, // No scatter symbols in Starburst
             FeatureWin: featureSummary?.FeatureWin ?? Money.Zero,
             BuyCost: buyCost,
-            FreeSpinsAwarded: freeSpinsAwarded,
+            FreeSpins: freeSpinsAwarded, // Renamed from FreeSpinsAwarded per RGS spec
             RoundId: roundId,
             Timestamp: _timeService.UtcNow,
             NextState: nextState,
             Results: new ResultsEnvelope(
                 Cascades: cascades,
-                Wins: wins,
+                Wins: winsWithCoordinates, // Now includes coordinates
                 Scatter: null, // No scatter symbols in Starburst
                 FreeSpins: null, // No free spins feature in Starburst
                 RngTransactionId: roundId,
-                FinalGridSymbols: finalGrid),
+                FinalGridSymbols: finalGrid,
+                // NEW: Per RGS spec for frontend
+                Stops: stops,
+                TotalWin: totalWin,
+                Feature: resultsFeature),
             Message: responseMessage,
             Feature: featureOutcome);
 
@@ -578,11 +619,28 @@ public sealed class SpinHandler
         // EngineState can be null - it will be created if null (see line 44)
         // Validation removed to allow null engineState for first spin
 
-        // Validate bet: use bet field if provided (per RGS spec), otherwise TotalBet
+        // Per RGS spec:
+        // - BetType in bets[] is optional - only amount is guaranteed
+        // - Accept 'bet' as alias for 'totalBet'
+        // - Can calculate total bet from bets[].amount sum if neither bet nor totalBet provided
         var betToValidate = request.Bet ?? request.TotalBet;
+        
+        // If neither bet nor totalBet is provided, calculate from bets array
+        if (betToValidate.Amount <= 0 && request.Bets.Count > 0)
+        {
+            var calculatedTotal = request.Bets.Sum(b => b.Amount.Amount);
+            if (calculatedTotal > 0)
+            {
+                Console.WriteLine($"[SpinHandler] Calculated total bet from bets array: {calculatedTotal}");
+                // Note: We can't modify betToValidate here as it's for validation only
+                // The actual calculation happens in effectiveBet assignment above
+                betToValidate = new Money(calculatedTotal);
+            }
+        }
+        
         if (betToValidate.Amount <= 0)
         {
-            throw new ArgumentException("Bet amount must be positive.", nameof(request.Bet));
+            throw new ArgumentException("Bet amount must be positive. Provide 'bet', 'totalBet', or bets with amounts.", nameof(request.Bet));
         }
     }
 
@@ -1635,6 +1693,182 @@ public sealed class SpinHandler
                 .ToArray();
             return FromSeeds(reelSeeds, multiplierSeeds);
         }
+        
+        /// <summary>
+        /// Calculate actual reel stop positions from seeds.
+        /// Per RGS spec, frontend needs stops[] for animation.
+        /// </summary>
+        public IReadOnlyList<int> CalculateStops(IReadOnlyList<IReadOnlyList<string>> reelStrips, IReadOnlySet<int>? lockedReels = null)
+        {
+            var stops = new List<int>(_reelSeeds.Count);
+            for (int i = 0; i < _reelSeeds.Count && i < reelStrips.Count; i++)
+            {
+                if (lockedReels != null && lockedReels.Contains(i))
+                {
+                    // Locked reel - use 0 as stop (doesn't matter, reel is frozen)
+                    stops.Add(0);
+                }
+                else
+                {
+                    // Calculate actual stop position
+                    var stripLength = reelStrips[i].Count;
+                    stops.Add(Math.Abs(_reelSeeds[i]) % stripLength);
+                }
+            }
+            return stops;
+        }
+    }
+    
+    // ═══════════════════════════════════════════════════════════════════════════════════════════
+    // HELPER METHODS FOR RGS COMPLIANCE
+    // ═══════════════════════════════════════════════════════════════════════════════════════════
+    
+    /// <summary>
+    /// Try to restore engine state from lastResponse per RGS spec.
+    /// The RGS platform may not maintain EngineState, so we support
+    /// restoring from lastResponse.results.feature as a fallback.
+    /// </summary>
+    private static EngineSessionState? TryRestoreStateFromLastResponse(JsonElement lastResponse)
+    {
+        try
+        {
+            // Navigate to results.feature
+            if (!lastResponse.TryGetProperty("results", out var results))
+            {
+                Console.WriteLine("[SpinHandler] lastResponse has no 'results' property");
+                return null;
+            }
+            
+            if (!results.TryGetProperty("feature", out var feature))
+            {
+                Console.WriteLine("[SpinHandler] lastResponse.results has no 'feature' property");
+                return null;
+            }
+            
+            // Check if feature is active
+            if (!feature.TryGetProperty("active", out var activeElement) || !activeElement.GetBoolean())
+            {
+                Console.WriteLine("[SpinHandler] lastResponse.results.feature is not active");
+                return null;
+            }
+            
+            // Get feature type
+            var featureType = feature.TryGetProperty("type", out var typeElement) 
+                ? typeElement.GetString() 
+                : null;
+                
+            if (featureType != "EXPANDING_WILDS")
+            {
+                Console.WriteLine($"[SpinHandler] lastResponse.results.feature.type is '{featureType}', not EXPANDING_WILDS");
+                return null;
+            }
+            
+            // Extract respin state
+            var respinsRemaining = feature.TryGetProperty("respinsRemaining", out var remainingElement)
+                ? remainingElement.GetInt32()
+                : 0;
+                
+            var respinsAwarded = feature.TryGetProperty("respinsAwarded", out var awardedElement)
+                ? awardedElement.GetInt32()
+                : 0;
+            
+            // Extract locked reels
+            var lockedReels = new HashSet<int>();
+            if (feature.TryGetProperty("lockedReels", out var lockedReelsElement) && 
+                lockedReelsElement.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var reel in lockedReelsElement.EnumerateArray())
+                {
+                    lockedReels.Add(reel.GetInt32());
+                }
+            }
+            
+            if (respinsRemaining <= 0 || lockedReels.Count == 0)
+            {
+                Console.WriteLine("[SpinHandler] lastResponse feature has no active respins or locked reels");
+                return null;
+            }
+            
+            Console.WriteLine($"[SpinHandler] Restored from lastResponse: RespinsRemaining={respinsRemaining}, LockedReels=[{string.Join(",", lockedReels)}]");
+            
+            return new EngineSessionState
+            {
+                Respins = new RespinState
+                {
+                    RespinsRemaining = respinsRemaining,
+                    TotalRespinsAwarded = respinsAwarded,
+                    LockedWildReels = lockedReels,
+                    JustTriggered = false
+                }
+            };
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[SpinHandler] Error parsing lastResponse: {ex.Message}");
+            return null;
+        }
+    }
+    
+    /// <summary>
+    /// Convert flat grid indices to x/y coordinates for frontend animation.
+    /// Grid layout: x = column (reel 0-4), y = row (0=top, 2=bottom)
+    /// Flat index layout: bottom-to-top, left-to-right
+    ///   indices 0-4 = bottom row (reels 0-4)
+    ///   indices 5-9 = middle row (reels 0-4)
+    ///   indices 10-14 = top row (reels 0-4)
+    /// </summary>
+    private static IReadOnlyList<WinCoordinate> IndicesToCoordinates(IReadOnlyList<int>? indices, int columns, int rows)
+    {
+        if (indices == null || indices.Count == 0)
+            return Array.Empty<WinCoordinate>();
+        
+        var coords = new List<WinCoordinate>(indices.Count);
+        foreach (var index in indices)
+        {
+            // From flat index, calculate x (column) and y (row)
+            // Flat index = (rows - 1 - row) * columns + column
+            // So: row = rows - 1 - (index / columns), column = index % columns
+            var x = index % columns;  // Column (reel)
+            var y = rows - 1 - (index / columns);  // Row (0=top, 2=bottom)
+            coords.Add(new WinCoordinate(x, y));
+        }
+        return coords;
+    }
+    
+    /// <summary>
+    /// Add coordinates to all wins for frontend animation.
+    /// </summary>
+    private static IReadOnlyList<SymbolWin> AddCoordinatesToWins(IReadOnlyList<SymbolWin> wins, int columns, int rows)
+    {
+        return wins.Select(w => w with { 
+            Coordinates = IndicesToCoordinates(w.Indices, columns, rows) 
+        }).ToList();
+    }
+    
+    /// <summary>
+    /// Create ResultsFeature from feature state for safe forwarding to frontend.
+    /// The RGS platform forwards results as-is, so this is the safest path.
+    /// Duplicates isClosure inside results.feature so it can't be dropped by RGS transformations.
+    /// </summary>
+    private static ResultsFeature? CreateResultsFeature(
+        FeatureOutcome? featureOutcome, 
+        EngineSessionState? state,
+        IReadOnlyList<int>? initialGrid)
+    {
+        if (featureOutcome == null)
+            return null;
+            
+        // Create feature state for results object
+        // IsClosure is duplicated here from top-level feature for safe forwarding
+        return new ResultsFeature(
+            Type: featureOutcome.Type,
+            Active: featureOutcome.Active ?? false,
+            RespinsAwarded: featureOutcome.RespinsAwarded ?? 0,
+            RespinsRemaining: featureOutcome.RespinsRemaining ?? 0,
+            IsClosure: featureOutcome.IsClosure,  // Duplicated for safe forwarding to frontend
+            LockedReels: featureOutcome.LockedReels,
+            ExpandingWilds: featureOutcome.ExpandingWilds,
+            InitialGridSymbols: initialGrid);
     }
 }
 

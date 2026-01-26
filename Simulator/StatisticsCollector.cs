@@ -1,17 +1,80 @@
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// StatisticsCollector.cs - Thread-Safe Statistics Collection
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+//
+// PURPOSE:
+//   Collects statistics from millions of parallel spins in a thread-safe manner.
+//   Used to calculate GLI compliance metrics like RTP, hit frequency, feature frequency, etc.
+//
+// WHY THREAD-SAFETY IS NEEDED:
+//   The simulator runs spins in parallel across multiple CPU cores (using Parallel.ForAsync).
+//   Without thread-safety, multiple threads could read/write the same variable simultaneously,
+//   causing "race conditions" where values get corrupted or lost.
+//
+// THREAD-SAFETY TECHNIQUES USED:
+//   1. Interlocked operations - Atomic read/write for primitive types (long, int)
+//   2. ConcurrentDictionary - Thread-safe dictionary that handles concurrent updates
+//   3. Storing money as cents (long) - Avoids thread-unsafe decimal operations
+//
+// METRICS COLLECTED:
+//   - Total spins and winning spins
+//   - Total bet and total win amounts
+//   - RTP (Return to Player) percentage
+//   - Hit frequency (% of spins that win)
+//   - Feature trigger rates (expanding wilds)
+//   - Payline reachability (which paylines can win)
+//   - Multiplier distribution (3x, 4x, 5x wins per symbol)
+//   - Max win tracking (highest win, 500x cap verification)
+//
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+
 using System.Collections.Concurrent;
 
 namespace Simulator;
 
 /// <summary>
 /// Thread-safe statistics collector for GLI compliance metrics.
-/// Tracks RTP, hit frequency, payline reachability, multiplier distribution, and feature frequency.
+/// 
+/// IMPORTANT: This class is designed to be called from multiple threads simultaneously.
+/// All public methods are thread-safe and can be called concurrently without locks.
+/// 
+/// Example usage:
+///   var stats = new StatisticsCollector();
+///   
+///   // Called from multiple parallel threads
+///   Parallel.For(0, 1000000, i => {
+///       var result = RunSpin();
+///       stats.RecordSpin(result);  // Thread-safe!
+///   });
+///   
+///   var snapshot = stats.GetSnapshot();  // Get results after all spins complete
 /// </summary>
 public sealed class StatisticsCollector
 {
-    // Core metrics (using long for atomic operations)
+    // ═══════════════════════════════════════════════════════════════════════════════════════════
+    // CORE METRICS - Using `long` for atomic operations via Interlocked
+    // ═══════════════════════════════════════════════════════════════════════════════════════════
+    //
+    // WHY LONG INSTEAD OF DECIMAL?
+    //   - Decimal operations are NOT atomic (can't use Interlocked)
+    //   - Long operations ARE atomic on 64-bit systems
+    //   - We store money in CENTS (multiply by 100) to use integers
+    //   - When reporting, we divide by 100 to get the decimal value
+    //
+    // Example: R1.50 is stored as 150 cents
+    //
+    // ═══════════════════════════════════════════════════════════════════════════════════════════
+    
+    /// <summary>Total number of base game spins executed</summary>
     private long _totalSpins;
+    
+    /// <summary>Number of spins that resulted in any win</summary>
     private long _winningSpins;
-    private long _totalBetCents; // Store in cents to avoid decimal threading issues
+    
+    /// <summary>Total amount bet (stored in CENTS for thread-safety)</summary>
+    private long _totalBetCents;
+    
+    /// <summary>Total amount won (stored in CENTS for thread-safety)</summary>
     private long _totalWinCents;
 
     // Feature tracking

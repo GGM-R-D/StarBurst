@@ -364,3 +364,5 @@ FodyWeavers.xsd
 
 # Frontend folder - not needed in backend repository
 frontend/
+
+Simulator/
