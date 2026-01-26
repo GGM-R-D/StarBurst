@@ -266,7 +266,7 @@ Console.WriteLine($"    Parallelism:     {Environment.ProcessorCount} cores");
             var request = new PlayRequest(
                 GameId: "starburst",
                 PlayerToken: $"SIM-{i}",
-                Bets: new[] { new BetRequest("main", new Money(betAmount)) },
+                Bets: new[] { new BetRequest(new Money(betAmount), "main") },
                 BaseBet: new Money(betAmount),
                 TotalBet: new Money(betAmount),
                 BetMode: BetMode.Standard,
@@ -317,7 +317,7 @@ Console.WriteLine($"    Parallelism:     {Environment.ProcessorCount} cores");
                     var respinRequest = new PlayRequest(
                         GameId: "starburst",
                         PlayerToken: $"SIM-{i}-RESPIN",
-                        Bets: new[] { new BetRequest("main", new Money(betAmount)) },
+                        Bets: new[] { new BetRequest(new Money(betAmount), "main") },
                         BaseBet: new Money(betAmount),
                         TotalBet: new Money(betAmount),
                         BetMode: BetMode.Standard,

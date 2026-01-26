@@ -1043,7 +1043,7 @@ public sealed class OutcomeTester
             var request = new PlayRequest(
                 GameId: "starburst",
                 PlayerToken: "OUTCOME-TEST",
-                Bets: new[] { new BetRequest("main", new Money(1.00m)) },
+                Bets: new[] { new BetRequest(new Money(1.00m), "main") },
                 BaseBet: new Money(1.00m),
                 TotalBet: new Money(1.00m),
                 BetMode: BetMode.Standard,
@@ -1370,7 +1370,7 @@ public sealed class OutcomeTester
             var request = new PlayRequest(
                 GameId: "starburst",
                 PlayerToken: "MULTI-PAYLINE-TEST",
-                Bets: new[] { new BetRequest("main", new Money(1.00m)) },
+                Bets: new[] { new BetRequest(new Money(1.00m), "main") },
                 BaseBet: new Money(1.00m),
                 TotalBet: new Money(1.00m),
                 BetMode: BetMode.Standard,
