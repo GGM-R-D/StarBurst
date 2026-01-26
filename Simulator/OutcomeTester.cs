@@ -343,13 +343,23 @@ public sealed class OutcomeTester
         Console.WriteLine("  STEP 4: Searching for Valid Grid...");
         Console.WriteLine("  ─────────────────────────────────────────────────────────────────────────────");
 
-        var gridResult = FindValidGrid(config, paylineNum, selectedSymbol.Sym, matchCount);
+        // First try without wilds (clean test)
+        var gridResult = FindValidGrid(config, paylineNum, selectedSymbol.Sym, matchCount, allowWilds: false);
+        
+        // If not found without wilds, try again allowing wilds
+        if (gridResult == null)
+        {
+            gridResult = FindValidGrid(config, paylineNum, selectedSymbol.Sym, matchCount, allowWilds: true);
+        }
 
         if (gridResult == null)
         {
             Console.WriteLine();
             Console.WriteLine($"  ❌ RESULT: Cannot achieve {matchCount}x {selectedSymbol.Code} win on Payline {paylineNum}");
             Console.WriteLine($"     with the current reel strips.");
+            Console.WriteLine();
+            Console.WriteLine("     This combination is NOT reachable - the reel strips do not contain");
+            Console.WriteLine("     the required symbols in positions that would produce this outcome.");
             Console.WriteLine("\n  Press Enter to continue...");
             Console.ReadLine();
             return;
@@ -360,7 +370,18 @@ public sealed class OutcomeTester
         var customGridOneBased = customGridZeroBased.Select(id => id + 1).ToArray();
         
         Console.WriteLine();
-        Console.WriteLine($"  ✓ FOUND: Valid grid for {matchCount}x {selectedSymbol.Code} on Payline {paylineNum}");
+        if (gridResult.HasWild)
+        {
+            Console.ForegroundColor = ConsoleColor.Yellow;
+            Console.WriteLine($"  ✓ FOUND: Valid grid for {matchCount}x {selectedSymbol.Code} on Payline {paylineNum}");
+            Console.WriteLine($"     ⚠ WILD SYMBOL PRESENT on Reel(s): {string.Join(", ", gridResult.WildReels)}");
+            Console.WriteLine($"     This will trigger EXPANDING WILDS feature!");
+            Console.ResetColor();
+        }
+        else
+        {
+            Console.WriteLine($"  ✓ FOUND: Valid grid for {matchCount}x {selectedSymbol.Code} on Payline {paylineNum}");
+        }
         Console.WriteLine();
 
         // Show the reel strip positions being used (proves this is from the actual reelset)
@@ -682,7 +703,14 @@ public sealed class OutcomeTester
         Console.WriteLine("  STEP 4: Searching for Valid Grid...");
         Console.WriteLine("  ─────────────────────────────────────────────────────────────────────────────");
 
-        var result = FindValidGrid(config, paylineNum, selectedSymbol.Sym, matchCount);
+        // First try without wilds (clean test)
+        var result = FindValidGrid(config, paylineNum, selectedSymbol.Sym, matchCount, allowWilds: false);
+        
+        // If not found without wilds, try again allowing wilds
+        if (result == null)
+        {
+            result = FindValidGrid(config, paylineNum, selectedSymbol.Sym, matchCount, allowWilds: true);
+        }
 
         if (result == null)
         {
@@ -691,12 +719,23 @@ public sealed class OutcomeTester
             Console.WriteLine($"     with the current reel strips.");
             Console.WriteLine();
             Console.WriteLine("     This combination is NOT reachable - the reel strips do not contain");
-            Console.WriteLine("     a valid sequence of symbols to produce this outcome.");
+            Console.WriteLine("     the required symbols in positions that would produce this outcome.");
             return;
         }
 
         Console.WriteLine();
-        Console.WriteLine($"  ✓ FOUND: Valid grid for {matchCount}x {selectedSymbol.Code} on Payline {paylineNum}");
+        if (result.HasWild)
+        {
+            Console.ForegroundColor = ConsoleColor.Yellow;
+            Console.WriteLine($"  ✓ FOUND: Valid grid for {matchCount}x {selectedSymbol.Code} on Payline {paylineNum}");
+            Console.WriteLine($"     ⚠ WILD SYMBOL PRESENT on Reel(s): {string.Join(", ", result.WildReels)}");
+            Console.WriteLine($"     This will trigger EXPANDING WILDS feature!");
+            Console.ResetColor();
+        }
+        else
+        {
+            Console.WriteLine($"  ✓ FOUND: Valid grid for {matchCount}x {selectedSymbol.Code} on Payline {paylineNum}");
+        }
         Console.WriteLine();
 
         // Step 5: Execute the spin and show results
@@ -750,17 +789,18 @@ public sealed class OutcomeTester
     /// This is a CONSTRAINT SATISFACTION problem:
     /// - Winning reels must show the target symbol at the payline position
     /// - Breaker reel must NOT show the target symbol (to stop the win at exact count)
-    /// - No WILD symbols can appear (to avoid triggering expanding wilds)
+    /// - Optionally excludes WILD symbols (to avoid triggering expanding wilds)
     /// </summary>
     /// <param name="config">Game configuration containing reel strips and board dimensions</param>
     /// <param name="paylineNum">Which payline (1-10, human-readable)</param>
     /// <param name="targetSym">Which symbol to win with (e.g., "Sym4" for RED)</param>
     /// <param name="matchCount">How many consecutive matches (3, 4, or 5)</param>
+    /// <param name="allowWilds">If true, allows positions with WILD symbols (will trigger expanding wilds)</param>
     /// <returns>
     /// GridSearchResult containing reel positions and the resulting grid,
     /// or null if the configuration is impossible
     /// </returns>
-    private GridSearchResult? FindValidGrid(GameConfiguration config, int paylineNum, string targetSym, int matchCount)
+    private GridSearchResult? FindValidGrid(GameConfiguration config, int paylineNum, string targetSym, int matchCount, bool allowWilds = false)
     {
         // ─────────────────────────────────────────────────────────────────────────────────────
         // STEP 1: Get payline definition and reel strips
@@ -812,10 +852,11 @@ public sealed class OutcomeTester
             for (int startPos = 0; startPos < strip.Count; startPos++)
             {
                 // ─────────────────────────────────────────────────────────────────────────────
-                // CHECK 1: No WILD symbols in the visible window
+                // CHECK 1: Check for WILD symbols in the visible window
                 // ─────────────────────────────────────────────────────────────────────────────
-                // We check all 3 visible rows to ensure no WILD appears.
-                // This prevents the expanding wilds feature from triggering.
+                // We check all 3 visible rows for WILD symbols.
+                // If allowWilds is false, we skip positions with wilds to prevent expanding wilds.
+                // If allowWilds is true, we allow them but track which reels have wilds.
                 
                 bool hasWild = false;
                 for (int row = 0; row < rows; row++)
@@ -829,7 +870,7 @@ public sealed class OutcomeTester
                     }
                 }
                 
-                if (hasWild)
+                if (hasWild && !allowWilds)
                 {
                     // Skip this position - it would show a WILD symbol
                     continue;
@@ -918,14 +959,29 @@ public sealed class OutcomeTester
         // Grid is indexed as [row, column] where row 0 = top, row 2 = bottom.
         
         var grid = new string[rows, config.Board.Columns];
+        var wildReels = new List<int>();
+        bool gridHasWild = false;
+        
         for (int col = 0; col < config.Board.Columns; col++)
         {
             var strip = reelStrips[col];
+            bool reelHasWild = false;
             for (int row = 0; row < rows; row++)
             {
                 // Calculate strip index with wraparound
                 var idx = (selectedPositions[col] + row) % strip.Count;
                 grid[row, col] = strip[idx];
+                
+                // Track if this reel has a wild
+                if (strip[idx] == WILD_SYM)
+                {
+                    reelHasWild = true;
+                    gridHasWild = true;
+                }
+            }
+            if (reelHasWild)
+            {
+                wildReels.Add(col + 1); // 1-based reel number
             }
         }
 
@@ -933,7 +989,9 @@ public sealed class OutcomeTester
         return new GridSearchResult
         {
             ReelPositions = selectedPositions,  // Useful for verification
-            Grid = grid                          // The actual 3x5 symbol grid
+            Grid = grid,                         // The actual 3x5 symbol grid
+            HasWild = gridHasWild,              // Whether any wild symbols are in the grid
+            WildReels = wildReels               // Which reels (1-based) have wilds
         };
     }
 
@@ -1906,6 +1964,8 @@ public sealed class OutcomeTester
     {
         public int[] ReelPositions { get; init; } = Array.Empty<int>();
         public string[,] Grid { get; init; } = new string[0, 0];
+        public bool HasWild { get; init; } = false;
+        public List<int> WildReels { get; init; } = new List<int>();
     }
 }
 
