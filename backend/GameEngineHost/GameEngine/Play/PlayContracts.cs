@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using GameEngine.Configuration;
 
 namespace GameEngine.Play;
@@ -20,7 +21,13 @@ public sealed record PlayRequest(
     int? RtpLevel = null, // RTP level if game supports multiple RTP (1,2,3,4 etc.)
     int? Mode = null, // Game mode: 0=normal, 1=free spin, 2=bonus game, 3=free bets
     JsonElement? Currency = null, // Currency object with id property (e.g., {"id": "EUR"})
-    bool FunMode = false); // If true, uses pre-configured fun mode grids instead of RNG
+    [property: JsonConverter(typeof(FunModeJsonConverter))]
+    bool FunMode = false, // If true, uses pre-configured fun mode grids instead of RNG (accepts 0/1 in JSON)
+    // Cheat/debug fields: only honored when FunMode (or Development); frontend sends as top-level
+    int[]? Stops = null,
+    bool DebugEnabled = false,
+    int[]? Multipliers = null,
+    JsonElement? Cheat = null);
 
 /// <summary>
 /// Bet request from RGS. Per platform spec, only 'amount' is guaranteed.

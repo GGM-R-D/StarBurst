@@ -202,8 +202,9 @@ app.MapPost("/{operatorId}/{gameId}/play",
                 return Results.Json(new { statusCode = ErrorCodes.BadRequest, message = ex.Message }, statusCode: 200);
             }
 
-            // Log fun mode status for debugging
-            Console.WriteLine($"[RGS] Play request - Session FunMode: {session.FunMode}, SessionId: {session.SessionId}");
+            // Use funMode from play request when client sends it (so cheat mode follows user selection); else session
+            var engineFunMode = request.FunMode.HasValue ? request.FunMode.Value == 1 : session.FunMode;
+            Console.WriteLine($"[RGS] Play request - Session FunMode: {session.FunMode}, Request FunMode: {request.FunMode}, Engine FunMode: {engineFunMode}, SessionId: {session.SessionId}");
             
             var engineRequest = new PlayRequest(
                 GameId: gameId,
@@ -216,7 +217,11 @@ app.MapPost("/{operatorId}/{gameId}/play",
                 EngineState: session.State ?? EngineSessionState.Create(),
                 UserPayload: request.UserPayload,
                 LastResponse: request.LastResponse,
-                FunMode: session.FunMode); // Pass funMode from session to engine
+                FunMode: engineFunMode, // From play request when sent (user selection), else session
+                Stops: request.Stops,
+                DebugEnabled: request.DebugEnabled,
+                Multipliers: request.Multipliers,
+                Cheat: request.Cheat);
             
             Console.WriteLine($"[RGS] Engine request created - FunMode: {engineRequest.FunMode}");
 

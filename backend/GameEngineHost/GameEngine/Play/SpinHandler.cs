@@ -142,12 +142,29 @@ public sealed class SpinHandler
         }
         Console.WriteLine($"[SpinHandler] lockedReelsForBoardCreation: {(lockedReelsForBoardCreation != null ? $"Count={lockedReelsForBoardCreation.Count}, Reels=[{string.Join(", ", lockedReelsForBoardCreation)}]" : "null")}");
 
-        // Check for fun mode - use pre-configured grids instead of RNG
-        // IMPORTANT: Fun mode grids are ONLY used for base game spins, NOT respins
-        // During respins, we use normal RNG to avoid validation errors and allow natural gameplay
+        // Resolve cheat/fun fields: use top-level if set, else read from UserPayload (RGS only forwards userPayload)
+        var (effectiveFunMode, effectiveStops, effectiveDebugEnabled) = ResolveCheatFromRequest(request, reelStrips.Count);
+
+        // Cheat path: when FunMode + DebugEnabled + valid Stops (base game only), build board from requested stops
         ReelBoard board;
-        string? customGridValidationError = null; // Store validation error to return in response
-        if (request.FunMode && spinMode == SpinMode.BaseGame)
+        string? customGridValidationError = null; // Store validation error to return in response (fun mode custom grid only)
+        IReadOnlyList<int>? cheatStops = null;
+        var allowCheat = effectiveFunMode
+            && effectiveDebugEnabled
+            && effectiveStops != null
+            && effectiveStops.Length == reelStrips.Count
+            && spinMode == SpinMode.BaseGame;
+
+        if (allowCheat)
+        {
+            Console.WriteLine("[SpinHandler] ===== CHEAT MODE (stop-based) =====");
+            ValidateStopsForCheat(effectiveStops!, reelStrips);
+            board = CreateBoardFromStops(effectiveStops!, reelStrips, configuration, multiplierFactory);
+            cheatStops = effectiveStops;
+            Console.WriteLine($"[SpinHandler] Board built from requested stops: [{string.Join(", ", effectiveStops!)}]");
+            Console.WriteLine("[SpinHandler] =====================================");
+        }
+        else if (effectiveFunMode && spinMode == SpinMode.BaseGame)
         {
             Console.WriteLine("[SpinHandler] ===== FUN MODE ACTIVE (BASE GAME) =====");
             
@@ -212,7 +229,7 @@ public sealed class SpinHandler
         }
         else
         {
-            if (request.FunMode && spinMode == SpinMode.Respin)
+            if (effectiveFunMode && spinMode == SpinMode.Respin)
             {
                 Console.WriteLine("[SpinHandler] ===== FUN MODE ACTIVE (RESPIN) =====");
                 Console.WriteLine("[SpinHandler] Respins use normal RNG (not pre-configured grids) to preserve locked reels");
@@ -255,12 +272,29 @@ public sealed class SpinHandler
             Console.WriteLine($"[SpinHandler] No initial wild reels detected (before expansions)");
         }
         
+        // ENFORCE SINGLE WILD REEL RULE: Only one reel can have wilds per spin
+        // If multiple reels have wilds, randomly select one and replace wilds on others
+        if (initialWildReels.Count > 1 && (spinMode == SpinMode.BaseGame || spinMode == SpinMode.BuyEntry))
+        {
+            Console.WriteLine($"[SpinHandler] Multiple wild reels detected ({initialWildReels.Count}). Enforcing single wild reel rule...");
+            var wildDef = configuration.SymbolCatalog.FirstOrDefault(s => s.Code == "WILD");
+            if (wildDef != null)
+            {
+                initialWildReels = EnforceSingleWildReel(board, initialWildReels, configuration, _fortunaPrng, multiplierFactory);
+                Console.WriteLine($"[SpinHandler] Single wild reel enforced. Selected reel: {initialWildReels[0] + 1}");
+            }
+            else
+            {
+                Console.WriteLine($"[SpinHandler] ERROR: WILD symbol not found in symbol catalog!");
+            }
+        }
+        
         // Capture initial expanding wilds information (before expansion) for feature state
         // This captures which reels have wilds and which rows they appear on
         var initialExpandingWilds = DetectExpandingWilds(board, initialWildReels);
         
         // Starburst: Wilds can appear on reels 2, 3, 4 (indices 1, 2, 3)
-        // Multiple wild reels are allowed - each awards a respin (max 3 respins)
+        // Only ONE wild reel is allowed per spin (enforced above)
         // During respins, wild reels are locked and only non-locked reels re-spin
         
         // Handle wild expansion based on spin mode
@@ -298,6 +332,22 @@ public sealed class SpinHandler
             var newWildReels = wildReelsAfterSpin
                 .Where(r => !nextState.Respins.LockedWildReels.Contains(r) && r >= 1 && r <= 3)
                 .ToList();
+            
+            // ENFORCE SINGLE WILD REEL RULE: If multiple new wild reels detected, select one
+            if (newWildReels.Count > 1)
+            {
+                Console.WriteLine($"[SpinHandler] Multiple new wild reels detected during respin ({newWildReels.Count}). Enforcing single wild reel rule...");
+                var wildDef = configuration.SymbolCatalog.FirstOrDefault(s => s.Code == "WILD");
+                if (wildDef != null)
+                {
+                    newWildReels = EnforceSingleWildReel(board, newWildReels, configuration, _fortunaPrng, multiplierFactory);
+                    Console.WriteLine($"[SpinHandler] Single wild reel enforced during respin. Selected reel: {newWildReels[0] + 1}");
+                }
+                else
+                {
+                    Console.WriteLine($"[SpinHandler] ERROR: WILD symbol not found in symbol catalog!");
+                }
+            }
             
             // STEP 3: Expand new wilds immediately (BEFORE win evaluation so they can substitute)
             if (newWildReels.Count > 0)
@@ -551,8 +601,8 @@ public sealed class SpinHandler
         // RGS COMPLIANCE: Calculate stops, add coordinates, create results feature
         // ═══════════════════════════════════════════════════════════════════════════════════════
         
-        // Calculate actual reel stop positions for frontend animation
-        var stops = randomContext.CalculateStops(reelStrips, lockedReelsForBoardCreation);
+        // Calculate actual reel stop positions for frontend animation (use requested stops when cheat path was used)
+        var stops = cheatStops ?? randomContext.CalculateStops(reelStrips, lockedReelsForBoardCreation);
         Console.WriteLine($"[SpinHandler] Reel stops calculated: [{string.Join(", ", stops)}]");
         
         // Add x/y coordinates to all wins for frontend animation
@@ -872,6 +922,98 @@ public sealed class SpinHandler
     }
 
     /// <summary>
+    /// Validates stop indices for cheat path: each stop must be in range [0, strip.Length) for its reel.
+    /// </summary>
+    /// <summary>
+    /// Resolves funMode, stops, and debugEnabled from the request.
+    /// Uses top-level fields first; when RGS forwards only userPayload, reads from UserPayload (funMode, stops, debugEnabled, or cheat[0].stops).
+    /// </summary>
+    private static (bool FunMode, int[]? Stops, bool DebugEnabled) ResolveCheatFromRequest(PlayRequest request, int reelCount)
+    {
+        var funMode = request.FunMode;
+        var stops = request.Stops;
+        var debugEnabled = request.DebugEnabled;
+
+        if (request.UserPayload.HasValue)
+        {
+            var up = request.UserPayload.Value;
+            if (!funMode && up.TryGetProperty("funMode", out var fmEl))
+                funMode = fmEl.ValueKind == JsonValueKind.Number ? fmEl.GetInt32() == 1 : fmEl.GetBoolean();
+            if (stops == null && up.TryGetProperty("stops", out var stopsEl) && stopsEl.ValueKind == JsonValueKind.Array)
+            {
+                var list = new List<int>();
+                foreach (var e in stopsEl.EnumerateArray())
+                    if (e.TryGetInt32(out var v)) list.Add(v);
+                if (list.Count == reelCount)
+                    stops = list.ToArray();
+            }
+            if (!debugEnabled && up.TryGetProperty("debugEnabled", out var dbgEl))
+                debugEnabled = dbgEl.ValueKind == JsonValueKind.True || (dbgEl.ValueKind == JsonValueKind.Number && dbgEl.GetInt32() == 1);
+            if (stops == null && (up.TryGetProperty("cheat", out var cheatEl) || up.TryGetProperty("cheats", out cheatEl)) && cheatEl.ValueKind == JsonValueKind.Array && cheatEl.GetArrayLength() > 0)
+            {
+                var first = cheatEl[0];
+                if (first.TryGetProperty("stops", out var csEl) && csEl.ValueKind == JsonValueKind.Array)
+                {
+                    var list = new List<int>();
+                    foreach (var e in csEl.EnumerateArray())
+                        if (e.TryGetInt32(out var v)) list.Add(v);
+                    if (list.Count == reelCount)
+                        stops = list.ToArray();
+                }
+            }
+        }
+
+        return (funMode, stops, debugEnabled);
+    }
+
+    private static void ValidateStopsForCheat(int[] stops, IReadOnlyList<IReadOnlyList<string>> reelStrips)
+    {
+        for (int r = 0; r < stops.Length; r++)
+        {
+            if (r >= reelStrips.Count)
+            {
+                throw new ArgumentException($"Stops count ({stops.Length}) must equal reel count ({reelStrips.Count}).");
+            }
+            var stripLen = reelStrips[r].Count;
+            var stop = stops[r];
+            if (stop < 0 || stop >= stripLen)
+            {
+                throw new ArgumentException(
+                    $"Invalid stop index {stop} for reel {r + 1}: must be in range [0, {stripLen}).");
+            }
+        }
+    }
+
+    /// <summary>
+    /// Builds a ReelBoard from requested stop positions (cheat path).
+    /// Stop index = top of the 3-row visible window; convention matches frontend and existing engine.
+    /// </summary>
+    private static ReelBoard CreateBoardFromStops(
+        int[] stops,
+        IReadOnlyList<IReadOnlyList<string>> reelStrips,
+        GameConfiguration configuration,
+        Func<SymbolDefinition, decimal> multiplierFactory)
+    {
+        var rows = configuration.Board.Rows;
+        var columns = new List<ReelColumn>(reelStrips.Count);
+        for (int reelIndex = 0; reelIndex < reelStrips.Count; reelIndex++)
+        {
+            var strip = reelStrips[reelIndex];
+            var stop = stops[reelIndex];
+            var L = strip.Count;
+            // Visible window: top = strip[stop], middle = strip[(stop+1)%L], bottom = strip[(stop+2)%L]
+            var windowStrip = new List<string>
+            {
+                strip[stop % L],
+                strip[(stop + 1) % L],
+                strip[(stop + 2) % L]
+            };
+            columns.Add(new ReelColumn(windowStrip, 0, rows, configuration.SymbolMap, multiplierFactory));
+        }
+        return ReelBoard.CreateFromColumns(columns, rows);
+    }
+
+    /// <summary>
     /// Validates that each 3-symbol column (reel) appears as a contiguous sequence in the reel strip.
     /// Grid is column-major: [reel0_row0, reel0_row1, reel0_row2, reel1_row0, ...]
     /// Checks if the entire column sequence [top, middle, bottom] exists in the reel strip (with wrap-around).
@@ -995,6 +1137,55 @@ public sealed class SpinHandler
         }
         
         return wildReels;
+    }
+
+    /// <summary>
+    /// Enforces the single wild reel rule: Only ONE reel (reels 2, 3, or 4) can have wilds per spin.
+    /// If multiple reels have wilds, randomly selects one to keep and replaces wilds on others with random non-wild symbols.
+    /// </summary>
+    /// <param name="board">The game board</param>
+    /// <param name="wildReels">List of reel indices (0-based) that contain wild symbols</param>
+    /// <param name="configuration">Game configuration</param>
+    /// <param name="prng">Random number generator for selecting which reel to keep and replacing symbols</param>
+    /// <param name="multiplierFactory">Factory function for assigning multipliers to symbols</param>
+    /// <returns>List containing only the single selected reel index that should have wilds</returns>
+    private static List<int> EnforceSingleWildReel(
+        ReelBoard board,
+        List<int> wildReels,
+        GameConfiguration configuration,
+        FortunaPrng prng,
+        Func<SymbolDefinition, decimal> multiplierFactory)
+    {
+        if (wildReels.Count <= 1)
+        {
+            // Already only one or zero wild reels, no enforcement needed
+            return wildReels;
+        }
+
+        const string WILD_CODE = "WILD";
+        var wildDef = configuration.SymbolCatalog.FirstOrDefault(s => s.Code == WILD_CODE);
+        if (wildDef == null)
+        {
+            Console.WriteLine($"[SpinHandler] ERROR: WILD symbol not found in symbol catalog! Cannot enforce single wild reel rule.");
+            return wildReels; // Return original list if we can't process
+        }
+
+        // Randomly select one reel to keep wilds
+        var selectedReelIndex = wildReels[prng.NextInt32(0, wildReels.Count)];
+        Console.WriteLine($"[SpinHandler] Randomly selected reel {selectedReelIndex + 1} to keep wilds (from {wildReels.Count} wild reels)");
+
+        // Replace wilds on all other reels with random non-wild symbols
+        foreach (var reelIndex in wildReels)
+        {
+            if (reelIndex != selectedReelIndex)
+            {
+                Console.WriteLine($"[SpinHandler] Replacing wilds on reel {reelIndex + 1} with random non-wild symbols");
+                board.ReplaceWildsWithRandomSymbol(reelIndex, WILD_CODE, configuration, prng, multiplierFactory);
+            }
+        }
+
+        // Return list with only the selected reel
+        return new List<int> { selectedReelIndex };
     }
 
     /// <summary>
