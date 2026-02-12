@@ -272,29 +272,14 @@ public sealed class SpinHandler
             Console.WriteLine($"[SpinHandler] No initial wild reels detected (before expansions)");
         }
         
-        // ENFORCE SINGLE WILD REEL RULE: Only one reel can have wilds per spin
-        // If multiple reels have wilds, randomly select one and replace wilds on others
-        if (initialWildReels.Count > 1 && (spinMode == SpinMode.BaseGame || spinMode == SpinMode.BuyEntry))
-        {
-            Console.WriteLine($"[SpinHandler] Multiple wild reels detected ({initialWildReels.Count}). Enforcing single wild reel rule...");
-            var wildDef = configuration.SymbolCatalog.FirstOrDefault(s => s.Code == "WILD");
-            if (wildDef != null)
-            {
-                initialWildReels = EnforceSingleWildReel(board, initialWildReels, configuration, _fortunaPrng, multiplierFactory);
-                Console.WriteLine($"[SpinHandler] Single wild reel enforced. Selected reel: {initialWildReels[0] + 1}");
-            }
-            else
-            {
-                Console.WriteLine($"[SpinHandler] ERROR: WILD symbol not found in symbol catalog!");
-            }
-        }
+        // Keep all detected wild reels so the frontend can animate all wild positions/reels.
+        // This applies to both cheat/fun mode and normal RNG mode.
         
         // Capture initial expanding wilds information (before expansion) for feature state
         // This captures which reels have wilds and which rows they appear on
         var initialExpandingWilds = DetectExpandingWilds(board, initialWildReels);
         
         // Starburst: Wilds can appear on reels 2, 3, 4 (indices 1, 2, 3)
-        // Only ONE wild reel is allowed per spin (enforced above)
         // During respins, wild reels are locked and only non-locked reels re-spin
         
         // Handle wild expansion based on spin mode
@@ -332,22 +317,6 @@ public sealed class SpinHandler
             var newWildReels = wildReelsAfterSpin
                 .Where(r => !nextState.Respins.LockedWildReels.Contains(r) && r >= 1 && r <= 3)
                 .ToList();
-            
-            // ENFORCE SINGLE WILD REEL RULE: If multiple new wild reels detected, select one
-            if (newWildReels.Count > 1)
-            {
-                Console.WriteLine($"[SpinHandler] Multiple new wild reels detected during respin ({newWildReels.Count}). Enforcing single wild reel rule...");
-                var wildDef = configuration.SymbolCatalog.FirstOrDefault(s => s.Code == "WILD");
-                if (wildDef != null)
-                {
-                    newWildReels = EnforceSingleWildReel(board, newWildReels, configuration, _fortunaPrng, multiplierFactory);
-                    Console.WriteLine($"[SpinHandler] Single wild reel enforced during respin. Selected reel: {newWildReels[0] + 1}");
-                }
-                else
-                {
-                    Console.WriteLine($"[SpinHandler] ERROR: WILD symbol not found in symbol catalog!");
-                }
-            }
             
             // STEP 3: Expand new wilds immediately (BEFORE win evaluation so they can substitute)
             if (newWildReels.Count > 0)
@@ -1137,55 +1106,6 @@ public sealed class SpinHandler
         }
         
         return wildReels;
-    }
-
-    /// <summary>
-    /// Enforces the single wild reel rule: Only ONE reel (reels 2, 3, or 4) can have wilds per spin.
-    /// If multiple reels have wilds, randomly selects one to keep and replaces wilds on others with random non-wild symbols.
-    /// </summary>
-    /// <param name="board">The game board</param>
-    /// <param name="wildReels">List of reel indices (0-based) that contain wild symbols</param>
-    /// <param name="configuration">Game configuration</param>
-    /// <param name="prng">Random number generator for selecting which reel to keep and replacing symbols</param>
-    /// <param name="multiplierFactory">Factory function for assigning multipliers to symbols</param>
-    /// <returns>List containing only the single selected reel index that should have wilds</returns>
-    private static List<int> EnforceSingleWildReel(
-        ReelBoard board,
-        List<int> wildReels,
-        GameConfiguration configuration,
-        FortunaPrng prng,
-        Func<SymbolDefinition, decimal> multiplierFactory)
-    {
-        if (wildReels.Count <= 1)
-        {
-            // Already only one or zero wild reels, no enforcement needed
-            return wildReels;
-        }
-
-        const string WILD_CODE = "WILD";
-        var wildDef = configuration.SymbolCatalog.FirstOrDefault(s => s.Code == WILD_CODE);
-        if (wildDef == null)
-        {
-            Console.WriteLine($"[SpinHandler] ERROR: WILD symbol not found in symbol catalog! Cannot enforce single wild reel rule.");
-            return wildReels; // Return original list if we can't process
-        }
-
-        // Randomly select one reel to keep wilds
-        var selectedReelIndex = wildReels[prng.NextInt32(0, wildReels.Count)];
-        Console.WriteLine($"[SpinHandler] Randomly selected reel {selectedReelIndex + 1} to keep wilds (from {wildReels.Count} wild reels)");
-
-        // Replace wilds on all other reels with random non-wild symbols
-        foreach (var reelIndex in wildReels)
-        {
-            if (reelIndex != selectedReelIndex)
-            {
-                Console.WriteLine($"[SpinHandler] Replacing wilds on reel {reelIndex + 1} with random non-wild symbols");
-                board.ReplaceWildsWithRandomSymbol(reelIndex, WILD_CODE, configuration, prng, multiplierFactory);
-            }
-        }
-
-        // Return list with only the selected reel
-        return new List<int> { selectedReelIndex };
     }
 
     /// <summary>
