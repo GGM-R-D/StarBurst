@@ -48,12 +48,12 @@ public sealed class FreeSpinState
 
 /// <summary>
 /// Tracks Starburst Wild Respin feature state.
-/// Wilds on reels 2, 3, 4 expand and lock, awarding respins.
+/// Wilds on reels 2, 3, 4 expand and lock. One respin is awarded per spin when any expanding wilds appear.
 /// </summary>
 public sealed class RespinState
 {
     /// <summary>
-    /// Number of respins remaining (max 3, one per wild reel).
+    /// Number of respins remaining. One respin is awarded per spin (regardless of how many wilds), not N respins for N wilds.
     /// </summary>
     public int RespinsRemaining { get; set; }
     
@@ -73,12 +73,30 @@ public sealed class RespinState
     /// </summary>
     public bool JustTriggered { get; set; }
 
+    /// <summary>
+    /// Cached final grid (symbol IDs) from the spin that triggered respins. Returned unchanged on follow-up requests while respins decrement.
+    /// </summary>
+    public IReadOnlyList<int>? CachedGridIds { get; set; }
+    
+    /// <summary>
+    /// Cached total win from the spin that triggered respins.
+    /// </summary>
+    public Money? CachedTotalWin { get; set; }
+    
+    /// <summary>
+    /// Cached symbol wins from the spin that triggered respins.
+    /// </summary>
+    public IReadOnlyList<SymbolWin>? CachedWins { get; set; }
+
     public RespinState Clone() => new()
     {
         RespinsRemaining = RespinsRemaining,
         LockedWildReels = new HashSet<int>(LockedWildReels),
         TotalRespinsAwarded = TotalRespinsAwarded,
-        JustTriggered = JustTriggered
+        JustTriggered = JustTriggered,
+        CachedGridIds = CachedGridIds,
+        CachedTotalWin = CachedTotalWin,
+        CachedWins = CachedWins
     };
 }
 

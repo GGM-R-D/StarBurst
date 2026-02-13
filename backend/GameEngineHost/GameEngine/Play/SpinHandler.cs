@@ -67,22 +67,12 @@ public sealed class SpinHandler
             }
         }
         
-        // CRITICAL: Clear respin state if it's invalid or exhausted BEFORE determining spin mode
-        // This prevents stale respin state from incorrectly setting spinMode to Respin
-        if (nextState.Respins is not null)
+        // CRITICAL: Clear respin state only when starting a new session (no state sent).
+        // When respins are exhausted we keep state (and cache) so follow-up requests get the same response with respinsRemaining=0.
+        if (nextState.Respins is not null && request.EngineState is null)
         {
-            // Clear if respins are exhausted (feature has ended)
-            if (nextState.Respins.RespinsRemaining <= 0)
-            {
-                Console.WriteLine($"[SpinHandler] Clearing respin state (respins exhausted: {nextState.Respins.RespinsRemaining})");
-                nextState.Respins = null;
-            }
-            // Clear if request.EngineState is null (completely new session)
-            else if (request.EngineState is null)
-            {
-                Console.WriteLine($"[SpinHandler] Clearing respin state (new session, no previous state)");
-                nextState.Respins = null;
-            }
+            Console.WriteLine("[SpinHandler] Clearing respin state (new session, no previous state)");
+            nextState.Respins = null;
         }
         
         // Determine spin mode AFTER clearing invalid respin state
@@ -91,13 +81,6 @@ public sealed class SpinHandler
             ? SpinMode.BuyEntry
             : nextState.IsInRespinFeature ? SpinMode.Respin
             : SpinMode.BaseGame;
-        
-        // Additional safety: If we determined BaseGame but respin state still exists, clear it
-        if (spinMode == SpinMode.BaseGame && nextState.Respins is not null)
-        {
-            Console.WriteLine($"[SpinHandler] Clearing stale respin state (determined BaseGame but respin state exists: {nextState.Respins.RespinsRemaining} respins)");
-            nextState.Respins = null;
-        }
         
         Console.WriteLine($"[SpinHandler] SpinMode: {spinMode}, RespinsRemaining: {nextState.Respins?.RespinsRemaining ?? 0}, LockedReels: {(nextState.Respins?.LockedWildReels != null && nextState.Respins.LockedWildReels.Count > 0 ? string.Join(",", nextState.Respins.LockedWildReels.Select(r => r + 1)) : "none")}, RequestHadRespinState: {request.EngineState?.Respins != null}");
 
@@ -114,6 +97,74 @@ public sealed class SpinHandler
         var buyCost = request.IsFeatureBuy
             ? Money.FromBet(request.BaseBet.Amount, configuration.BuyFeature.CostMultiplier)
             : Money.Zero;
+
+        // ═══════════════════════════════════════════════════════════════════════════════════════
+        // RETURN CACHED RESPONSE: Frontend may send up to 3 play requests for the same scenario.
+        // Return the same grid/win each time with respinsRemaining decrementing (e.g. 1 → 0 → 0).
+        // ═══════════════════════════════════════════════════════════════════════════════════════
+        if (nextState.Respins is not null && nextState.Respins.CachedGridIds is not null && nextState.Respins.CachedTotalWin is not null)
+        {
+            var respinsBefore = nextState.Respins.RespinsRemaining;
+            if (nextState.Respins.RespinsRemaining > 0)
+            {
+                nextState.Respins.RespinsRemaining -= 1;
+                nextState.Respins.JustTriggered = false;
+            }
+            Console.WriteLine($"[SpinHandler] Returning cached response (same grid/win): RespinsRemaining {respinsBefore} -> {nextState.Respins.RespinsRemaining}");
+
+            var cachedGrid = nextState.Respins.CachedGridIds;
+            var cachedWin = nextState.Respins.CachedTotalWin.Value;
+            var cachedWins = nextState.Respins.CachedWins ?? Array.Empty<SymbolWin>();
+            var winsWithCoords = cachedWins.Count > 0 && cachedWins[0].Coordinates is null
+                ? AddCoordinatesToWins(cachedWins.ToList(), configuration.Board.Columns, configuration.Board.Rows)
+                : cachedWins.ToList();
+
+            var cachedCascade = new CascadeStep(
+                Index: 0,
+                GridBefore: cachedGrid,
+                GridAfter: cachedGrid,
+                WinsAfterCascade: cachedWins.ToList(),
+                BaseWin: cachedWin,
+                AppliedMultiplier: 1m,
+                TotalWin: cachedWin);
+
+            var isClosure = nextState.Respins.RespinsRemaining == 0 ? 1 : 0;
+            var featureOutcomeCached = new FeatureOutcome(
+                Type: "EXPANDING_WILDS",
+                IsClosure: isClosure,
+                Name: "Starburst Wilds",
+                Active: nextState.Respins.RespinsRemaining > 0,
+                RespinsAwarded: nextState.Respins.TotalRespinsAwarded,
+                RespinsRemaining: nextState.Respins.RespinsRemaining,
+                LockedReels: nextState.Respins.LockedWildReels?.ToList(),
+                ExpandingWilds: null,
+                InitialGrid: null);
+            var resultsFeatureCached = CreateResultsFeature(featureOutcomeCached, nextState, cachedGrid);
+
+            var cachedResponse = new PlayResponse(
+                StatusCode: 200,
+                Win: cachedWin,
+                ScatterWin: Money.Zero,
+                FeatureWin: Money.Zero,
+                BuyCost: buyCost,
+                FreeSpins: 0,
+                RoundId: roundId,
+                Timestamp: _timeService.UtcNow,
+                NextState: nextState,
+                Results: new ResultsEnvelope(
+                    Cascades: new List<CascadeStep> { cachedCascade },
+                    Wins: winsWithCoords,
+                    Scatter: null,
+                    FreeSpins: null,
+                    RngTransactionId: roundId,
+                    FinalGridSymbols: cachedGrid,
+                    Stops: null,
+                    TotalWin: cachedWin,
+                    Feature: resultsFeatureCached),
+                Message: "Request processed successfully",
+                Feature: featureOutcomeCached);
+            return cachedResponse;
+        }
 
         var reelStrips = SelectReelStrips(configuration, spinMode, request.BetMode);
         Console.WriteLine($"[SpinHandler] Reel strips selected: {reelStrips.Count} reels");
@@ -577,6 +628,15 @@ public sealed class SpinHandler
         // Add x/y coordinates to all wins for frontend animation
         var winsWithCoordinates = AddCoordinatesToWins(wins, configuration.Board.Columns, configuration.Board.Rows);
         Console.WriteLine($"[SpinHandler] Added coordinates to {winsWithCoordinates.Count} wins");
+        
+        // Cache grid/win when respins remain so follow-up requests get the same response with respins decrementing
+        if (nextState.Respins != null && nextState.Respins.RespinsRemaining > 0)
+        {
+            nextState.Respins.CachedGridIds = finalGrid;
+            nextState.Respins.CachedTotalWin = totalWin;
+            nextState.Respins.CachedWins = winsWithCoordinates;
+            Console.WriteLine("[SpinHandler] Cached response for follow-up requests (same grid/win, respins decrementing)");
+        }
         
         // Create ResultsFeature for safe forwarding to frontend (inside results object)
         var resultsFeature = CreateResultsFeature(featureOutcome, nextState, initialGrid);
@@ -1146,21 +1206,18 @@ public sealed class SpinHandler
     /// <summary>
     /// Handles Starburst Wild Respin feature:
     /// - Wilds on reels 2, 3, 4 expand and lock
-    /// - Each wild reel awards one respin (max 3 respins total)
-    /// - New wilds during respins also expand and award additional respins
+    /// - One respin is awarded per spin when any expanding wilds appear (not N respins for N wilds)
+    /// - New wilds during respins also expand and award exactly one additional respin for that spin
     /// </summary>
     private static void HandleWildRespinFeature(List<int> wildReels, EngineSessionState state, SpinMode currentMode)
     {
-        const int MAX_RESPINS = 3;
-        
         if (state.Respins is null)
         {
-            // Initialize respin feature
-            // IMPORTANT: Each wild reel awards exactly 1 respin (max 3 total)
+            // Initialize respin feature: one respin per spin regardless of how many wilds
             var newLockedReels = new HashSet<int>(wildReels);
-            var respinsAwarded = Math.Min(wildReels.Count, MAX_RESPINS);
+            const int respinsAwarded = 1;
             
-            Console.WriteLine($"[SpinHandler] Initializing respin feature: {wildReels.Count} wild reel(s) detected on reels {string.Join(", ", wildReels.Select(r => r + 1))}, awarding {respinsAwarded} respin(s)");
+            Console.WriteLine($"[SpinHandler] Initializing respin feature: {wildReels.Count} wild reel(s) detected on reels {string.Join(", ", wildReels.Select(r => r + 1))}, awarding 1 respin (one per spin)");
             
             state.Respins = new RespinState
             {
@@ -1170,38 +1227,28 @@ public sealed class SpinHandler
                 JustTriggered = true
             };
             
-            Console.WriteLine($"[SpinHandler] Respin feature initialized: RespinsRemaining={respinsAwarded}, locked reels: {string.Join(", ", newLockedReels.Select(r => r + 1))}");
+            Console.WriteLine($"[SpinHandler] Respin feature initialized: RespinsRemaining=1, locked reels: {string.Join(", ", newLockedReels.Select(r => r + 1))}");
         }
         else
         {
-            // Already in respin feature - check for new wild reels
+            // Already in respin feature - check for new wild reels on this spin
             var existingLocked = state.Respins.LockedWildReels;
             var newWildReels = wildReels.Where(r => !existingLocked.Contains(r)).ToList();
             
             if (newWildReels.Count > 0)
             {
-                // New wild reels found - add them to locked reels and award additional respins
-                var totalLocked = existingLocked.Count + newWildReels.Count;
-                var maxPossibleRespins = Math.Min(totalLocked, MAX_RESPINS);
-                var currentRespins = state.Respins.RespinsRemaining;
+                // New wild reels found: add to locked reels and award exactly one additional respin for this spin
+                state.Respins.RespinsRemaining += 1;
+                state.Respins.TotalRespinsAwarded += 1;
                 
-                // Award additional respins, but don't exceed max of 3 total
-                var additionalRespins = Math.Min(newWildReels.Count, maxPossibleRespins - currentRespins);
-                if (additionalRespins > 0)
+                var updatedLocked = new HashSet<int>(existingLocked);
+                foreach (var reel in newWildReels)
                 {
-                    state.Respins.RespinsRemaining = Math.Min(MAX_RESPINS, currentRespins + additionalRespins);
-                    state.Respins.TotalRespinsAwarded += additionalRespins;
-                    
-                    // Add new reels to locked set
-                    var updatedLocked = new HashSet<int>(existingLocked);
-                    foreach (var reel in newWildReels)
-                    {
-                        updatedLocked.Add(reel);
-                    }
-                    state.Respins.LockedWildReels = updatedLocked;
-                    
-                    Console.WriteLine($"[SpinHandler] New wild reels during respin: {string.Join(", ", newWildReels.Select(r => r + 1))}, additional respins: {additionalRespins}, total locked: {updatedLocked.Count}");
+                    updatedLocked.Add(reel);
                 }
+                state.Respins.LockedWildReels = updatedLocked;
+                
+                Console.WriteLine($"[SpinHandler] New wild reels during respin: {string.Join(", ", newWildReels.Select(r => r + 1))}, awarded 1 additional respin (one per spin), total locked: {updatedLocked.Count}");
             }
         }
     }
@@ -1856,14 +1903,7 @@ public sealed class SpinHandler
                 return null;
             }
             
-            // Check if feature is active
-            if (!feature.TryGetProperty("active", out var activeElement) || !activeElement.GetBoolean())
-            {
-                Console.WriteLine("[SpinHandler] lastResponse.results.feature is not active");
-                return null;
-            }
-            
-            // Get feature type
+            // Get feature type (we restore whenever we have EXPANDING_WILDS and locked reels, even if respins=0, so we can return cached response)
             var featureType = feature.TryGetProperty("type", out var typeElement) 
                 ? typeElement.GetString() 
                 : null;
@@ -1894,13 +1934,45 @@ public sealed class SpinHandler
                 }
             }
             
-            if (respinsRemaining <= 0 || lockedReels.Count == 0)
+            if (lockedReels.Count == 0)
             {
-                Console.WriteLine("[SpinHandler] lastResponse feature has no active respins or locked reels");
+                Console.WriteLine("[SpinHandler] lastResponse feature has no locked reels");
                 return null;
             }
             
-            Console.WriteLine($"[SpinHandler] Restored from lastResponse: RespinsRemaining={respinsRemaining}, LockedReels=[{string.Join(",", lockedReels)}]");
+            // Restore cache from lastResponse so we can return same grid/win when respins decrement
+            IReadOnlyList<int>? cachedGridIds = null;
+            Money? cachedTotalWin = null;
+            IReadOnlyList<SymbolWin>? cachedWins = null;
+            if (lastResponse.TryGetProperty("win", out var winEl))
+            {
+                var winAmount = winEl.ValueKind == JsonValueKind.Number
+                    ? winEl.GetDecimal()
+                    : (winEl.TryGetProperty("amount", out var am) ? am.GetDecimal() : 0m);
+                cachedTotalWin = new Money(winAmount);
+            }
+            if (results.TryGetProperty("finalGridSymbols", out var gridEl) && gridEl.ValueKind == JsonValueKind.Array)
+            {
+                var list = new List<int>();
+                foreach (var e in gridEl.EnumerateArray())
+                    list.Add(e.GetInt32());
+                cachedGridIds = list;
+            }
+            if (results.TryGetProperty("wins", out var winsEl) && winsEl.ValueKind == JsonValueKind.Array)
+            {
+                var winsList = new List<SymbolWin>();
+                foreach (var w in winsEl.EnumerateArray())
+                {
+                    var symbolCode = w.TryGetProperty("symbolCode", out var sc) ? sc.GetString() ?? "" : "";
+                    var count = w.TryGetProperty("count", out var c) ? c.GetInt32() : 0;
+                    var mult = w.TryGetProperty("multiplier", out var m) ? m.GetDecimal() : 0m;
+                    var payoutEl = w.TryGetProperty("payout", out var po) && po.TryGetProperty("amount", out var am) ? am.GetDecimal() : 0m;
+                    winsList.Add(new SymbolWin(symbolCode, count, mult, new Money(payoutEl), null, null, null));
+                }
+                if (winsList.Count > 0) cachedWins = winsList;
+            }
+            
+            Console.WriteLine($"[SpinHandler] Restored from lastResponse: RespinsRemaining={respinsRemaining}, LockedReels=[{string.Join(",", lockedReels)}], HasCache={cachedGridIds != null}");
             
             return new EngineSessionState
             {
@@ -1909,7 +1981,10 @@ public sealed class SpinHandler
                     RespinsRemaining = respinsRemaining,
                     TotalRespinsAwarded = respinsAwarded,
                     LockedWildReels = lockedReels,
-                    JustTriggered = false
+                    JustTriggered = false,
+                    CachedGridIds = cachedGridIds,
+                    CachedTotalWin = cachedTotalWin,
+                    CachedWins = cachedWins
                 }
             };
         }
